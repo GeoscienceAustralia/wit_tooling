@@ -19,12 +19,14 @@ import os
 from subprocess import call
 import psycopg2
 from time import sleep
+import numpy as np
+from psycopg2.extensions import register_adapter, AsIs
 
 from .connection import ConnectionFactory
 from .special_sql import * 
 
 _LOGGER = logging.getLogger(__name__)
-
+psycopg2.extensions.register_adapter(np.int64, psycopg2._psycopg.AsIs)
 
 class InvalidConnectionException(Exception):
     """ This exception is raised when a worker tries to update a model record that
@@ -667,10 +669,28 @@ class DIO(object):
         row = self.get_data_by_poly_id(poly_id)
         return poly_name, row
 
+    def get_name_by_id(self, table_name, poly_id):
+        if table_name == self.catchment.tableName:
+            poly_name = 'catchment_name'
+            id_name = 'catchment_id'
+        elif table_name == self.polygons.tableName:
+            poly_name = 'poly_name'
+            id_name = 'poly_id'
+        query = "SELECT %s from %s " \
+                "where %s=%%s" \
+                % (poly_name, table_name, id_name,)
+        sql_params = (poly_id,)
+        with ConnectionFactory.get() as conn:
+            row = self.get_matching_rows(conn, query, sql_params, None)
+            if len(row) == 0:
+                return ''
+            poly_name = row[0][0]
+            return poly_name
+
     def get_polys_by_catchment_id(self, catchment_id, maxrows=None):
         query = "SELECT poly_id from %s as p, %s as c " \
                 " WHERE ST_Contains(c.geometry, p.geometry) AND c.catchment_id=%%s " \
-                " ORDER BY ST_Area(p.geometry)" % (self.poly_tablename, self.catchment.tableName,)
+                " ORDER BY ST_Area(p.geometry) DESC" % (self.poly_tablename, self.catchment.tableName,)
         if maxrows is not None:
             query += " LIMIT %s" % (maxrows,)
         sql_params = (catchment_id,)
@@ -691,7 +711,7 @@ class DIO(object):
         query = "SELECT * FROM (SELECT poly_id, coalesce(pv/total::float, 0) as pv_perc, " \
                 " coalesce(openwater/total::float, 0) as openwater_penc, coalesce(wet/total::float, 0) as wet_perc " \
                 " FROM %s) AS a NATURAL JOIN (SELECT poly_id, pv as pv_fot, openwater as openwater_fot, " \
-                " wet as wet_fot FROM %s) as b WHERE poly_id IN %%s" % (self.alltime_metrics.tableName, self.first_observe.tableName)
+                " wet as wet_fot FROM %s) AS b WHERE poly_id IN %%s" % (self.alltime_metrics.tableName, self.first_observe.tableName)
         sql_params = (tuple(poly_list),) 
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, None)
@@ -711,6 +731,28 @@ class DIO(object):
         query = query + " ORDER BY poly_id ASC, start_time ASC"
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, max_rows)
+        return row 
+
+    def get_inundation(self, poly_list, start_year, end_year, min_area=1, max_rows=5000):
+        if not isinstance(poly_list, self._SEQUENCE_TYPES):
+            poly_list = tuple([poly_list])
+        query = "SELECT poly_id, LEAST(SUM(LEAST(ey, %%s)-GREATEST(sy, %%s)+1), %%s) AS wet_years, "\
+                " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM "\
+                " (SELECT poly_id, EXTRACT(year FROM start_time) AS sy, EXTRACT(year FROM end_time) AS ey, "\
+                " CASE WHEN (EXTRACT(year FROM start_time)>=%%s) THEN SUM(LEAST(duration, %%s-start_time)) "\
+                " WHEN (EXTRACT(year FROM end_time) < %%s) THEN SUM(LEAST(duration, end_time-%%s)) "\
+                " ELSE INTERVAL '0D' END AS duration, AVG(area) AS area FROM %s "\
+                " WHERE (start_time<%%s and start_time>=%%s) "\
+                " OR (end_time<%%s and end_time>=%%s) GROUP by poly_id, sy, ey) AS a WHERE poly_id in %%s "\
+                " AND area>%%s GROUP BY poly_id ORDER BY area DESC limit %%s" % (self.event_metrics.tableName)
+
+        start_time = '-'.join([str(start_year), '01', '01'])
+        end_time = '-'.join([str(end_year), '01', '01'])
+        year_interval = int(end_year)-int(start_year)
+        sql_params = (end_year, start_year, year_interval, year_interval, start_year, end_time, end_year,
+                       start_time, end_time, start_time, end_time, start_time, tuple(poly_list), min_area, max_rows)
+        with ConnectionFactory.get() as conn:
+            row = self.get_matching_rows(conn, query, sql_params, None)
         return row 
 
     def query_with_return(self, query):

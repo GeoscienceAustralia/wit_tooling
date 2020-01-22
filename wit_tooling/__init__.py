@@ -18,3 +18,7 @@ def get_event_metrics(poly_list):
     rows = dio.get_event_metrics(poly_list)
     return  pd.DataFrame(rows, columns=['poly_id', 'start_time', 'end_time', 'duration', 'max', 'mean', 'area'])
 
+def get_inundation(poly_list, start_date, end_date, min_area, max_rows):
+    dio = DIO.get()
+    rows = dio.get_inundation(poly_list, start_date, end_date, min_area, max_rows)
+    return pd.DataFrame(rows, columns=['poly_id', 'wet_years', 'percent', 'area'])
