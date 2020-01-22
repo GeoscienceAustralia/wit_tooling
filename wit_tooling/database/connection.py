@@ -461,5 +461,5 @@ def get_database_args():
           host = host,
           port = port,
           user = user,
-          passwd=passwd
+          password=passwd
       )
