@@ -436,7 +436,7 @@ def get_database_args():
 
     from .io import DIO
     dbname = DIO.get_db_name()
-    host  = os.getenv('DB_HOSTNAME')
+    host  = os.getenv('WIT_DB_HOSTNAME')
     user = os.getenv('DB_USERNAME')
     passwd = os.getenv('DB_PASSWORD')
     if host is None:
