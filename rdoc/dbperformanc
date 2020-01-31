@@ -1,0 +1,96 @@
+Benchmarking R1: Temp table
+RDS Amazon
+db.m4.4xlarge, 4000 IOPS VCPU 16  ECU 53.5 RAM 64
+
+Output:
+query amount 1000
+query finish in 0:00:11.822078
+query amount 2000
+query finish in 0:00:05.108835
+query amount 3000
+query finish in 0:00:09.083491
+query amount 4000
+query finish in 0:00:13.404533
+query amount 5000
+query finish in 0:00:08.058868
+query amount 6000
+query finish in 0:00:06.221275
+query amount 7000
+query finish in 0:00:07.313095
+query amount 8000
+query finish in 0:00:07.843429
+query amount 9000
+query finish in 0:00:04.793899
+
+NCI Postgres Server
+8 Core Intel Xeon E5-4620 v2 @ 2.60GHz, 32Gb RAM, 1Tb storage
+
+Output:
+query amount 1000
+query finish in 0:00:00.770072
+query amount 2000
+query finish in 0:00:01.252887
+query amount 3000
+query finish in 0:00:01.707473
+query amount 4000
+query finish in 0:00:01.805156
+query amount 5000
+query finish in 0:00:03.194257
+query amount 6000
+query finish in 0:00:03.306579
+query amount 7000
+query finish in 0:00:03.361261
+query amount 8000
+query finish in 0:00:03.763884
+query amount 9000
+query finish in 0:00:03.600263
+
+
+Benchmarking RD2: Temp view
+RDS Amazon
+db.m4.4xlarge, 4000 IOPS VCPU 16  ECU 53.5 RAM 64
+
+Output:
+query amount 1000
+query finish in 0:00:01.479939
+query amount 2000
+query finish in 0:00:02.848333
+query amount 3000
+query finish in 0:00:03.032429
+query amount 4000
+query finish in 0:00:04.406967
+query amount 5000
+query finish in 0:00:05.060032
+query amount 6000
+query finish in 0:00:05.736368
+query amount 7000
+query finish in 0:00:07.295523
+query amount 8000
+query finish in 0:00:06.832101
+query amount 9000
+query finish in 0:00:02.320567
+
+NCI Postgres Server
+8 Core Intel Xeon E5-4620 v2 @ 2.60GHz, 32Gb RAM, 1Tb storage
+
+Output:
+query amount 1000
+query finish in 0:00:00.653444
+query amount 2000
+query finish in 0:00:00.898906
+query amount 3000
+query finish in 0:00:01.287607
+query amount 4000
+query finish in 0:00:01.653280
+query amount 5000
+query finish in 0:00:02.927652
+query amount 6000
+query finish in 0:00:03.101908
+query amount 7000
+query finish in 0:00:03.404470
+query amount 8000
+query finish in 0:00:03.599616
+query amount 9000
+query finish in 0:00:03.758278
+
+Note: query parameters are generated randomly, which means non-equivalent but statistically consistent

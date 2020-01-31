@@ -735,24 +735,37 @@ class DIO(object):
 
     def get_inundation(self, poly_list, start_year, end_year, min_area=1, max_rows=5000):
         if not isinstance(poly_list, self._SEQUENCE_TYPES):
-            poly_list = tuple([poly_list])
-        query = "SELECT poly_id, LEAST(SUM(LEAST(ey, %%s)-GREATEST(sy, %%s)+1), %%s) AS wet_years, "\
-                " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM "\
+            poly_list = [poly_list]
+
+        start_time = '-'.join([str(start_year), '01', '01'])
+        end_time = '-'.join([str(end_year), '01', '01'])
+        year_interval = int(end_year)-int(start_year)
+
+        query_view_s1 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_s1 AS "\
                 " (SELECT poly_id, EXTRACT(year FROM start_time) AS sy, EXTRACT(year FROM end_time) AS ey, "\
                 " CASE WHEN (EXTRACT(year FROM start_time)>=%%s) THEN SUM(LEAST(duration, %%s-start_time)) "\
                 " WHEN (EXTRACT(year FROM end_time) < %%s) THEN SUM(LEAST(duration, end_time-%%s)) "\
                 " ELSE INTERVAL '0D' END AS duration, AVG(area) AS area FROM %s "\
                 " WHERE (start_time<%%s and start_time>=%%s) "\
-                " OR (end_time<%%s and end_time>=%%s) GROUP by poly_id, sy, ey) AS a WHERE poly_id in %%s "\
-                " AND area>%%s GROUP BY poly_id ORDER BY area DESC limit %%s" % (self.event_metrics.tableName)
+                " OR (end_time<%%s and end_time>=%%s) GROUP by poly_id, sy, ey)" % (str(start_year), str(end_year), self.event_metrics.tableName)
 
-        start_time = '-'.join([str(start_year), '01', '01'])
-        end_time = '-'.join([str(end_year), '01', '01'])
-        year_interval = int(end_year)-int(start_year)
-        sql_params = (end_year, start_year, year_interval, year_interval, start_year, end_time, end_year,
-                       start_time, end_time, start_time, end_time, start_time, tuple(poly_list), min_area, max_rows)
+        sql_params_s1 = (start_year, end_time, end_year,
+                       start_time, end_time, start_time, end_time, start_time)
+
+
+        query_view_s2 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_s2 AS "\
+                " (SELECT poly_id, LEAST(SUM(LEAST(ey, %%s)-GREATEST(sy, %%s)+1), %%s) AS wet_years, "\
+                " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM decade_%s_%s_s1"\
+                " GROUP BY poly_id ORDER BY area DESC)" % (str(start_year), str(end_year), str(start_year), str(end_year))
+
+        sql_params_s2 = (end_year, start_year, year_interval, year_interval)
+
+        data_query = "SELECT * FROM decade_%s_%s_s2 WHERE area>=%%s AND poly_id IN %%s limit %%s" % (str(start_year), str(end_year))
+        data_params = (min_area, tuple(poly_list), max_rows)
         with ConnectionFactory.get() as conn:
-            row = self.get_matching_rows(conn, query, sql_params, None)
+            conn.cursor.execute(query_view_s1, sql_params_s1)
+            conn.cursor.execute(query_view_s2, sql_params_s2)
+            row = self.get_matching_rows(conn, data_query, data_params, None)
         return row 
 
     def query_with_return(self, query):
