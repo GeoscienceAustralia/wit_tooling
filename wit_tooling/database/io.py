@@ -266,8 +266,6 @@ class DIO(object):
               "feature_id       INT",
               "result_ready     BOOL DEFAULT FALSE",
               "last_update      TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL",
-              "area             FLOAT DEFAULT 0",
-              "catchment_id     INT",
               "PRIMARY KEY (poly_id)",
               "UNIQUE (poly_hash)"
               ]
@@ -436,8 +434,6 @@ class DIO(object):
             sqlParams.append(maxRows)
         return query, sqlParams, maxRows
 
-
-
     def get_matching_rows(self, conn, query, sqlParams, maxRows):
         conn.cursor.execute(query, sqlParams)
         rows = conn.cursor.fetchall()
@@ -446,7 +442,6 @@ class DIO(object):
               len(rows), maxRows)
         else:
             rows = tuple()
-
         return rows
 
     @classmethod
@@ -658,9 +653,25 @@ class DIO(object):
     def get_data_by_poly_id(self, poly_id):
         query, sql_params, max_rows = self.construct_query(self.data,
                 dict(poly_id=poly_id), ['datetime', 'fc_bs', 'fc_npv', 'fc_pv', 'tci_w', 'wofs_water'])
+        query += " ORDER BY datetime ASC"
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, max_rows)
         return row
+
+    def get_area_by_poly_id(self, poly_id):
+        query_view = "CREATE OR REPLACE TEMP VIEW data_in_area AS "\
+                " (SELECT a.poly_id, datetime, ST_Area(geometry)/10000 AS area, "\
+                " ST_Area(geometry)/10000*fc_bs AS fc_bs, ST_Area(geometry)/10000*fc_npv AS fc_npv, "\
+                " ST_Area(geometry)/10000*fc_pv AS fc_pv, ST_Area(geometry)/10000*tci_w AS tci_w, "\
+                " ST_Area(geometry)/10000*wofs_water AS wofs_water FROM polygons as a, data as b WHERE a.poly_id=b.poly_id)"
+        query_data = "SELECT datetime, area, fc_bs, fc_npv, fc_pv, tci_w, wofs_water FROM data_in_area WHERE poly_id=%s"\
+                " ORDER BY datetime ASC"
+        query_params = (poly_id, )
+        with ConnectionFactory.get() as conn:
+            conn.cursor.execute(query_view)
+            row = self.get_matching_rows(conn, query_data, query_params, None)
+        return row 
+
 
     def get_data_by_geom(self, geometry):
         poly_id, poly_name = self.get_id_by_geom(self.poly_tablename, geometry)
@@ -671,21 +682,16 @@ class DIO(object):
 
     def get_name_by_id(self, table_name, poly_id):
         if table_name == self.catchment.tableName:
-            poly_name = 'catchment_name'
-            id_name = 'catchment_id'
+            query, sql_params, max_rows = self.construct_query(self.catchment,
+                dict(catchment_id=poly_id), ['catchment_name'])
         elif table_name == self.polygons.tableName:
-            poly_name = 'poly_name'
-            id_name = 'poly_id'
-        query = "SELECT %s from %s " \
-                "where %s=%%s" \
-                % (poly_name, table_name, id_name,)
-        sql_params = (poly_id,)
+            query, sql_params, max_rows = self.construct_query(self.polygons,
+                dict(poly_id=poly_id), ['poly_name'])
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, None)
             if len(row) == 0:
                 return ''
-            poly_name = row[0][0]
-            return poly_name
+            return row
 
     def get_polys_by_catchment_id(self, catchment_id, maxrows=None):
         query = "SELECT poly_id from %s as p, %s as c " \
@@ -754,17 +760,41 @@ class DIO(object):
 
 
         query_view_s2 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_s2 AS "\
-                " (SELECT poly_id, LEAST(SUM(LEAST(ey, %%s)-GREATEST(sy, %%s)+1), %%s) AS wet_years, "\
-                " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM decade_%s_%s_s1"\
-                " GROUP BY poly_id ORDER BY area DESC)" % (str(start_year), str(end_year), str(start_year), str(end_year))
+                " (SELECT a.poly_id, poly_name, LEAST(SUM(LEAST(ey, %%s)-GREATEST(sy, %%s)+1), %%s) AS wet_years, "\
+                " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM decade_%s_%s_s1 AS a, "\
+                " polygons AS b WHERE a.poly_id=b.poly_id GROUP BY a.poly_id, b.poly_name ORDER BY area DESC)"\
+                % (str(start_year), str(end_year), str(start_year), str(end_year))
 
         sql_params_s2 = (end_year, start_year, year_interval, year_interval)
 
-        data_query = "SELECT * FROM decade_%s_%s_s2 WHERE area>=%%s AND poly_id IN %%s limit %%s" % (str(start_year), str(end_year))
+        query_view_c1 = "CREATE OR REPLACE TEMP VIEW dacade_%s_%s_c1 AS "\
+                " (SELECT poly_id, COUNT(sy) AS c1 FROM decade_%s_%s_s1 WHERE sy=ey and poly_id IN %%s GROUP BY poly_id)"\
+                % (str(start_year), str(end_year), str(start_year), str(end_year))
+        sql_params_c1 = (tuple(poly_list), )
+
+        query_view_c2 = "CREATE OR REPLACE TEMP VIEW dacade_%s_%s_c2 AS "\
+                " (SELECT a.poly_id, COUNT(*) AS c2 FROM (SELECT poly_id, sy FROM decade_%s_%s_s1 WHERE poly_id in %%s) as a, "\
+                " (SELECT poly_id, ey FROM decade_%s_%s_s1 WHERE poly_id IN %%s) AS b WHERE a.poly_id = b.poly_id "\
+                " AND a.sy=b.ey GROUP BY a.poly_id)"\
+                % (str(start_year), str(end_year), str(start_year), str(end_year), str(start_year), str(end_year))
+        sql_params_c2 = (tuple(poly_list), tuple(poly_list))
+
+        query_view_cd = "CREATE OR REPLACE TEMP VIEW dacade_%s_%s_cd AS "\
+                " (SELECT c.poly_id, c.c2-d.c1 AS diff FROM dacade_%s_%s_c2 AS c, dacade_%s_%s_c1 AS d "\
+                " WHERE c.poly_id = d.poly_id)"\
+                % (str(start_year), str(end_year), str(start_year), str(end_year), str(start_year), str(end_year))
+
+        data_query = "SELECT a.poly_id, poly_name, a.wet_years-b.diff as wet_years, percent, area "\
+                " FROM decade_%s_%s_s2 as a, dacade_%s_%s_cd as b where a.poly_id = b.poly_id AND area>=%%s "\
+                " AND a.poly_id IN %%s LIMIT %%s" % (str(start_year), str(end_year), str(start_year), str(end_year))
         data_params = (min_area, tuple(poly_list), max_rows)
+
         with ConnectionFactory.get() as conn:
             conn.cursor.execute(query_view_s1, sql_params_s1)
             conn.cursor.execute(query_view_s2, sql_params_s2)
+            conn.cursor.execute(query_view_c1, sql_params_c1)
+            conn.cursor.execute(query_view_c2, sql_params_c2)
+            conn.cursor.execute(query_view_cd)
             row = self.get_matching_rows(conn, data_query, data_params, None)
         return row 
 
