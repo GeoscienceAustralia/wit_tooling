@@ -237,6 +237,10 @@ class DIO(object):
         output = conn.cursor.fetchall()
         view_names = [x[0] for x in output]
 
+        conn.cursor.execute("SELECT matviewname FROM pg_matviews")
+        output = conn.cursor.fetchall()
+        matview_names = [x[0] for x in output]
+
         # only one process can create table
         lock = False
         if self.data_tablename not in table_names or self.poly_tablename not in table_names:
@@ -353,7 +357,7 @@ class DIO(object):
                     "key (poly_id) references polygons (poly_id)")
             conn.dbConn.commit()
 
-        if self.event_metrics.tableName not in view_names:
+        if self.event_metrics.tableName not in matview_names:
             conn.cursor.execute(event_metrics_view)
 
         if self.catchment.tableName not in table_names:
@@ -752,49 +756,51 @@ class DIO(object):
                 " CASE WHEN (EXTRACT(year FROM start_time)>=%%s) THEN SUM(LEAST(duration, %%s-start_time)) "\
                 " WHEN (EXTRACT(year FROM end_time) < %%s) THEN SUM(LEAST(duration, end_time-%%s)) "\
                 " ELSE INTERVAL '0D' END AS duration, AVG(area) AS area FROM %s "\
-                " WHERE (start_time<%%s and start_time>=%%s) "\
-                " OR (end_time<%%s and end_time>=%%s) GROUP by poly_id, sy, ey)" % (str(start_year), str(end_year), self.event_metrics.tableName)
+                " WHERE poly_id IN %%s AND ((start_time<%%s and start_time>=%%s) OR (end_time<%%s and end_time>=%%s)) "\
+                " GROUP by poly_id, sy, ey)" % (str(start_year), str(end_year), self.event_metrics.tableName)
 
-        sql_params_s1 = (start_year, end_time, end_year,
-                       start_time, end_time, start_time, end_time, start_time)
+        sql_params_s1 = (start_year, end_time, end_year, start_time, tuple(poly_list), end_time, start_time, end_time, start_time)
 
 
         query_view_s2 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_s2 AS "\
-                " (SELECT a.poly_id, poly_name, LEAST(SUM(LEAST(ey, %%s)-GREATEST(sy, %%s)+1), %%s) AS wet_years, "\
+                " (SELECT a.poly_id, poly_name, wet_years, "\
                 " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM decade_%s_%s_s1 AS a, "\
-                " polygons AS b WHERE a.poly_id=b.poly_id GROUP BY a.poly_id, b.poly_name ORDER BY area DESC)"\
-                % (str(start_year), str(end_year), str(start_year), str(end_year))
+                " polygons AS b, decade_%s_%s_y as c WHERE a.poly_id=b.poly_id AND a.poly_id=c.poly_id "\
+                " GROUP BY a.poly_id, b.poly_name, c.wet_years ORDER BY area DESC)"\
+                % ((str(start_year), str(end_year)) * 3)
 
-        sql_params_s2 = (end_year, start_year, year_interval, year_interval)
+        sql_params_s2 = (year_interval, )
 
-        query_view_c1 = "CREATE OR REPLACE TEMP VIEW dacade_%s_%s_c1 AS "\
-                " (SELECT poly_id, COUNT(sy) AS c1 FROM decade_%s_%s_s1 WHERE sy=ey and poly_id IN %%s GROUP BY poly_id)"\
-                % (str(start_year), str(end_year), str(start_year), str(end_year))
-        sql_params_c1 = (tuple(poly_list), )
+        query_view_c1 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_o AS "\
+                " (SELECT poly_id, ey, MAX(LEAST(ey, %%s-1)-GREATEST(sy, %%s)+1) AS wet_years FROM decade_%s_%s_s1 "\
+                " WHERE poly_id IN %%s group by ey, poly_id)" % ((str(start_year), str(end_year)) * 2)
+        sql_params_c1 = (end_year, start_year, tuple(poly_list))
 
-        query_view_c2 = "CREATE OR REPLACE TEMP VIEW dacade_%s_%s_c2 AS "\
-                " (SELECT a.poly_id, COUNT(*) AS c2 FROM (SELECT poly_id, sy FROM decade_%s_%s_s1 WHERE poly_id in %%s) as a, "\
-                " (SELECT poly_id, ey FROM decade_%s_%s_s1 WHERE poly_id IN %%s) AS b WHERE a.poly_id = b.poly_id "\
-                " AND a.sy=b.ey GROUP BY a.poly_id)"\
-                % (str(start_year), str(end_year), str(start_year), str(end_year), str(start_year), str(end_year))
-        sql_params_c2 = (tuple(poly_list), tuple(poly_list))
+        query_view_c2 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_r AS "\
+                " (SELECT a.poly_id, COUNT(*) as rep FROM (SELECT poly_id, sy FROM decade_%s_%s_s1 WHERE sy !=ey "\
+                " AND poly_id IN %%s) as a, decade_%s_%s_o AS b WHERE a.poly_id = b.poly_id AND a.sy = b.ey GROUP BY a.poly_id)"\
+                % ((str(start_year), str(end_year)) * 3)
+        sql_params_c2 = (tuple(poly_list), )
 
-        query_view_cd = "CREATE OR REPLACE TEMP VIEW dacade_%s_%s_cd AS "\
-                " (SELECT c.poly_id, c.c2-d.c1 AS diff FROM dacade_%s_%s_c2 AS c, dacade_%s_%s_c1 AS d "\
-                " WHERE c.poly_id = d.poly_id)"\
-                % (str(start_year), str(end_year), str(start_year), str(end_year), str(start_year), str(end_year))
+        query_view_c3 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_y AS "\
+                " (SELECT a.poly_id, a.wet_years - b.rep AS wet_years FROM (SELECT poly_id, SUM(wet_years) AS wet_years "\
+                " FROM decade_%s_%s_o GROUP BY poly_id) AS a, (SELECT * FROM decade_%s_%s_r) AS b WHERE a.poly_id = b.poly_id "\
+                " UNION ALL "\
+                " SELECT a.poly_id,  a.wet_years AS wet_years FROM (SELECT poly_id, SUM(wet_years) AS wet_years FROM "\
+                " decade_%s_%s_o GROUP BY poly_id) AS a WHERE NOT EXISTS (SELECT * FROM decade_%s_%s_r as b WHERE a.poly_id = b.poly_id))"\
+                % ((str(start_year), str(end_year)) * 5)
 
-        data_query = "SELECT a.poly_id, poly_name, a.wet_years-b.diff as wet_years, percent, area "\
-                " FROM decade_%s_%s_s2 as a, dacade_%s_%s_cd as b where a.poly_id = b.poly_id AND area>=%%s "\
-                " AND a.poly_id IN %%s LIMIT %%s" % (str(start_year), str(end_year), str(start_year), str(end_year))
+        data_query = "SELECT poly_id, poly_name, wet_years, percent, area "\
+                " FROM decade_%s_%s_s2 WHERE area>=%%s "\
+                " AND poly_id IN %%s LIMIT %%s" % (str(start_year), str(end_year))
         data_params = (min_area, tuple(poly_list), max_rows)
 
         with ConnectionFactory.get() as conn:
             conn.cursor.execute(query_view_s1, sql_params_s1)
-            conn.cursor.execute(query_view_s2, sql_params_s2)
             conn.cursor.execute(query_view_c1, sql_params_c1)
             conn.cursor.execute(query_view_c2, sql_params_c2)
-            conn.cursor.execute(query_view_cd)
+            conn.cursor.execute(query_view_c3)
+            conn.cursor.execute(query_view_s2, sql_params_s2)
             row = self.get_matching_rows(conn, data_query, data_params, None)
         return row 
 

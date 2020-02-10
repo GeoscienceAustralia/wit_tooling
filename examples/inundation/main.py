@@ -131,7 +131,9 @@ def select_update(attrname, old, new):
     for i in checkbox_group.active:
         catchments.append(catchment_list[i])
     label.text = '-'.join([str(decade-10), str(decade)])
-    source.data = data.loc[(data.decade==decade) & data.catchment.isin(catchments)]
+    refreshed_data = data.loc[(data.decade==decade) & data.catchment.isin(catchments)].reset_index()
+    source.data = refreshed_data 
+    source.selected.indices = refreshed_data.index[refreshed_data.poly_id.isin(poly_select.options)].tolist()
     color_map = plasma(len(catchments))
     color_mapper = factor_cmap('catchment', palette=color_map, factors=catchments)
     cc.glyph.fill_color=color_mapper
