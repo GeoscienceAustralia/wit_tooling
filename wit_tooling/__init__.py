@@ -13,6 +13,11 @@ def get_year_metrics(poly_list):
     rows = dio.get_year_metrics(poly_list)
     return pd.DataFrame(rows, columns=['poly_id', 'year', 'min', 'max'])
 
+def get_pv_year_metrics(poly_list):
+    dio = DIO.get()
+    rows = dio.get_pv_year_metrics(poly_list)
+    return pd.DataFrame(rows, columns=['poly_id', 'year', 'min', 'max', 'mean'])
+
 def get_event_metrics(poly_list):
     dio = DIO.get()
     rows = dio.get_event_metrics(poly_list)

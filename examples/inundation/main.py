@@ -67,7 +67,6 @@ poly_id_source = ColumnDataSource(data=dict(poly_id=[]))
 
 catchment_list = list(data.catchment.unique())
 color_map = plasma(len(catchment_list))
-print(color_map)
 
 plot = figure(y_range=(0, 100), x_range=(0, 11), title='Inundation', tools="tap", plot_height=400, plot_width=500, sizing_mode='scale_height')
 plot.xaxis.ticker = SingleIntervalTicker(interval=1)
@@ -102,6 +101,8 @@ def poly_update(attrname, old, new):
     poly_area = poly_data.area.unique()[0]
     poly_data = poly_data.drop(columns=['area'])
     sub_plot.y_range.end = poly_area
+    sub_plot.x_range.start = poly_data.time.min()
+    sub_plot.x_range.end = poly_data.time.max()
     single_source.data = poly_data
     sub_plot.title.text = data.poly_name.loc[data.poly_id == int(poly_id)].iloc[0] 
 
@@ -132,11 +133,12 @@ def select_update(attrname, old, new):
         catchments.append(catchment_list[i])
     label.text = '-'.join([str(decade-10), str(decade)])
     refreshed_data = data.loc[(data.decade==decade) & data.catchment.isin(catchments)].reset_index()
+    indices = refreshed_data.index[refreshed_data.poly_id.astype(str).isin(poly_select.options)].tolist()
     source.data = refreshed_data 
-    source.selected.indices = refreshed_data.index[refreshed_data.poly_id.isin(poly_select.options)].tolist()
     color_map = plasma(len(catchments))
     color_mapper = factor_cmap('catchment', palette=color_map, factors=catchments)
     cc.glyph.fill_color=color_mapper
+    source.selected.indices = indices
 
 select = Select(title="Decade", value='2020', options=['2000', '2010', '2020'], height=50, width=100, sizing_mode="fixed")
 select.on_change('value', select_update)

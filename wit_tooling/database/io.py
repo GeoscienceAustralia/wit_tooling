@@ -108,6 +108,10 @@ class DIO(object):
         def __init__(self):
             super().__init__()
 
+    class PVYearInfo(TableInfoBase):
+        def __init__(self):
+            super().__init__()
+
     class EventTimeInfo(TableInfoBase):
         def __init__(self):
             super().__init__()
@@ -188,6 +192,9 @@ class DIO(object):
 
         self.year_metrics = self.YearInfo()
         self.year_metrics.tableName = 'year_metrics'
+
+        self.pv_year_metrics = self.PVYearInfo()
+        self.pv_year_metrics.tableName = 'pv_year_metrics'
 
         self.event_metrics_time = self.EventTimeInfo()
         self.event_metrics_time.tableName = 'event_metrics_time'
@@ -735,6 +742,14 @@ class DIO(object):
             row = self.get_matching_rows(conn, query, sql_params, max_rows)
         return row 
 
+    def get_pv_year_metrics(self, poly_list):
+        query, sql_params, max_rows = self.construct_query(self.pv_year_metrics,
+                dict(poly_id=poly_list), ['poly_id', 'year', 'min', 'max', 'mean'])
+        query = query + " ORDER BY poly_id ASC, year ASC"
+        with ConnectionFactory.get() as conn:
+            row = self.get_matching_rows(conn, query, sql_params, max_rows)
+        return row 
+
     def get_event_metrics(self, poly_list):
         query, sql_params, max_rows = self.construct_query(self.event_metrics,
                 dict(poly_id=poly_list), ['poly_id', 'start_time', 'end_time', 'duration', 'max', 'mean', 'area'])
@@ -755,11 +770,14 @@ class DIO(object):
                 " (SELECT poly_id, EXTRACT(year FROM start_time) AS sy, EXTRACT(year FROM end_time) AS ey, "\
                 " CASE WHEN (EXTRACT(year FROM start_time)>=%%s) THEN SUM(LEAST(duration, %%s-start_time)) "\
                 " WHEN (EXTRACT(year FROM end_time) < %%s) THEN SUM(LEAST(duration, end_time-%%s)) "\
-                " ELSE INTERVAL '0D' END AS duration, AVG(area) AS area FROM %s "\
-                " WHERE poly_id IN %%s AND ((start_time<%%s and start_time>=%%s) OR (end_time<%%s and end_time>=%%s)) "\
-                " GROUP by poly_id, sy, ey)" % (str(start_year), str(end_year), self.event_metrics.tableName)
+                " WHEN ((EXTRACT(year FROM start_time) < %%s) AND (EXTRACT(year FROM end_time) >= %%s)) "\
+                " THEN SUM(LEAST(duration, (%%s::TimeStamp - %%s))) ELSE INTERVAL '0D' END AS duration, AVG(area) AS area FROM %s "\
+                " WHERE poly_id IN %%s AND ((start_time<%%s and start_time>=%%s) OR (end_time<%%s and end_time>=%%s) "\
+                " OR (start_time<%%s and end_time>=%%s)) GROUP by poly_id, sy, ey)"\
+                % (str(start_year), str(end_year), self.event_metrics.tableName)
 
-        sql_params_s1 = (start_year, end_time, end_year, start_time, tuple(poly_list), end_time, start_time, end_time, start_time)
+        sql_params_s1 = (start_year, end_time, end_year, start_time, start_year, end_year, end_time, start_time,
+                tuple(poly_list), end_time, start_time, end_time, start_time, start_time, end_time)
 
 
         query_view_s2 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_s2 AS "\
