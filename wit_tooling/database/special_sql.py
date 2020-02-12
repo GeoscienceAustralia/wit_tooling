@@ -23,6 +23,14 @@ create or replace view year_metrics (poly_id, year, min, max) as
     )
     """
 
+pv_year_metric_view ="""
+create or replace view pv_year_metrics (poly_id, year, min, max, mean) as
+    (select poly_id, extract(year from datetime) as year, min(fc_pv), max(fc_pv), avg(fc_pv)
+        from data group by year, poly_id 
+        order by year asc
+    )
+"""
+
 event_metrics_time_table = """
 create table event_metrics_time (event_id bigserial primary key,
     poly_id int, end_time timestamp,

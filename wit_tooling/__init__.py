@@ -8,15 +8,22 @@ def get_alltime_metrics(poly_list):
     return pd.DataFrame(rows, columns=['poly_id', 'pv_perc', 'openwater_penc',
                                      'wet_perc', 'pv_fot', 'openwater_fot', 'wet_fot'])
 
-def get_year_metrics(poly_list):
+def get_wet_year_metrics(poly_list):
     dio = DIO.get()
-    rows = dio.get_year_metrics(poly_list)
-    return pd.DataFrame(rows, columns=['poly_id', 'year', 'min', 'max'])
+    rows = dio.get_wet_year_metrics(poly_list)
+    return pd.DataFrame(rows, columns=['poly_id', 'year', 'min', 'max', 'mean'])
 
 def get_pv_year_metrics(poly_list):
     dio = DIO.get()
     rows = dio.get_pv_year_metrics(poly_list)
     return pd.DataFrame(rows, columns=['poly_id', 'year', 'min', 'max', 'mean'])
+
+def get_year_metrics_with_type_area(poly_list):
+    dio = DIO.get()
+    rows = dio.get_year_metrics_with_type_area(poly_list) 
+    return pd.DataFrame(rows, columns=['poly_id', 'year', 'wet_min', 'wet_max', 'wet_mean',
+                                        'water_min', 'water_max', 'water_mean',
+                                        'pv_min', 'pv_max', 'pv_mean', 'area', 'type'])
 
 def get_event_metrics(poly_list):
     dio = DIO.get()

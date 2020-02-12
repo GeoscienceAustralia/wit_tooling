@@ -193,8 +193,6 @@ class DIO(object):
         self.year_metrics = self.YearInfo()
         self.year_metrics.tableName = 'year_metrics'
 
-        self.pv_year_metrics = self.PVYearInfo()
-        self.pv_year_metrics.tableName = 'pv_year_metrics'
 
         self.event_metrics_time = self.EventTimeInfo()
         self.event_metrics_time.tableName = 'event_metrics_time'
@@ -337,6 +335,7 @@ class DIO(object):
 
         if self.year_metrics.tableName not in view_names:
             conn.cursor.execute(year_metric_view)
+
 
         if self.event_metrics_time.tableName not in table_names: 
             # this is messy and you don't want this
@@ -608,6 +607,17 @@ class DIO(object):
             poly_id = self.update_polygon(conn, poly_id, geometry=geometry)
         return poly_id
 
+    # I don't know if we need it yet
+    def update_polygon_properties(self, poly_id, properties):
+        query = "INSERT INTO %s (poly_id, properties) VALUES (%%s, %%s) ON CONFLICT (poly_id) "\
+                "DO UPDATE SET properties=%%s RETURNING poly_id" % ("poly_properties", )
+        params = (poly_id, properties, properties)
+        with ConnectionFactory.get() as conn:
+            conn.cursor.execute(query, params)
+            row = conn.cursor.fetchall()
+        assert len(row) == 1, 'Unexpected num fields: ' + repr(len(row))
+        return row[0][0]
+
     def insert_update_result(self, poly_id, ready, datetime, fc_bs, fc_pv, fc_npv, tci_w, wofs_water):
         with ConnectionFactory.get() as conn:
             state = self.update_result_state(conn, str(poly_id), ready, datetime)
@@ -734,20 +744,34 @@ class DIO(object):
             row = self.get_matching_rows(conn, query, sql_params, None)
         return row
 
-    def get_year_metrics(self, poly_list):
+    def get_year_metrics(self, poly_list, mlist):
+        mlist = ['poly_id', 'year'] + mlist
         query, sql_params, max_rows = self.construct_query(self.year_metrics,
-                dict(poly_id=poly_list), ['poly_id', 'year', 'min', 'max'])
+                dict(poly_id=poly_list), mlist)
         query = query + " ORDER BY poly_id ASC, year ASC"
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, max_rows)
         return row 
 
+    def get_wet_year_metrics(self, poly_list):
+        row = self.get_year_metrics(poly_list, ['wet_min', 'wet_max', 'wet_mean'])
+        return row 
+
     def get_pv_year_metrics(self, poly_list):
-        query, sql_params, max_rows = self.construct_query(self.pv_year_metrics,
-                dict(poly_id=poly_list), ['poly_id', 'year', 'min', 'max', 'mean'])
-        query = query + " ORDER BY poly_id ASC, year ASC"
+        row = self.get_year_metrics(poly_list, ['pv_min', 'pv_max', 'pv_mean'])
+        return row 
+    
+    def get_year_metrics_with_type_area(self, poly_list, wtype='SystemType'):
+        if not isinstance(poly_list, self._SEQUENCE_TYPES):
+            poly_list = [poly_list]
+
+        query = "SELECT a.*, ST_Area(b.geometry)/10000 as area, c.properties::json->%%s as type "\
+                " FROM %s as a, %s as b, %s as c WHERE a.poly_id=b.poly_id AND a.poly_id=c.poly_id AND a.poly_id IN %%s "\
+                " ORDER by a.poly_id ASC, a.year ASC"\
+                %(self.year_metrics.tableName, self.polygons.tableName, "poly_properties")
+        sql_params = (wtype, tuple(poly_list))
         with ConnectionFactory.get() as conn:
-            row = self.get_matching_rows(conn, query, sql_params, max_rows)
+            row = self.get_matching_rows(conn, query, sql_params, None)
         return row 
 
     def get_event_metrics(self, poly_list):

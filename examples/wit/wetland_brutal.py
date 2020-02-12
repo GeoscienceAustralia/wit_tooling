@@ -32,6 +32,7 @@ from mpi4py import MPI
 from mpi4py.futures import MPIPoolExecutor 
 from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
+from wit_tooling import poly_wkt
 
 _LOG = logging.getLogger('wit_tool')
 stdout_hdlr = logging.StreamHandler(sys.stdout)
@@ -74,33 +75,12 @@ def filter_store_result(args):
     item_id, state = dio.insert_update_result(poly_id, ready, time, *(result.astype('float')))
 
 def query_store_polygons(args):
-    # look for polygon area or length as an additonal to bounding box
-    # presumely it's impossible to have two different polygons bounded
-    # by the same box and having exactly same area
-    # store all the polygones in the database
-    # check/store result state in the database
-    # only do not-finished
     shape, crs, shapefile = args
     dio = DIO.get()
-    property_keys = ['shape_area', 'shape_leng']
-    shape_property = 0
-    for key in property_keys:
-        for p_key in shape['properties'].keys():
-            if p_key.lower() == key:
-                shape_property = shape['properties'].get(p_key, 0)
-                break
-        if shape_property != 0:
-            break
-
-    if shape_property == 0:
-        _LOG.debug("not a valid polygon with area/leng %s", shape_property)
-        return (None, -1)
-
     shape_id = int(shape['id'])
-    area_leng = dict({p_key:shape_property})
     poly_name = get_polyName(shape)
 
-    poly_id, state = db_insert_polygon(dio, poly_name, shape['geometry'], area_leng, crs, shapefile, shape_id)
+    poly_id, state = db_insert_polygon(dio, poly_name, shape['geometry'], shapefile, shape_id)
     if not state:
         return (shape['geometry'], poly_id)
     else:
