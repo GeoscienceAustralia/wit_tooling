@@ -16,13 +16,21 @@ from bokeh.events import DoubleTap
 
 dio = DIO.get()
 
-def metric_by_catchment():
-    source = None
-    for i in range(1):
+def get_catchments():
+    catchment_names = {}
+    for i in range(26):
         catchment_name = dio.get_name_by_id('catchments', i+1)[0][0]
         if catchment_name == '':
             continue
-        rows = dio.get_polys_by_catchment_id(i+1, 5000)
+        catchment_names[i+1] = catchment_name
+    return catchment_names
+
+def metric_by_catchment(catchment_name):
+    source = None
+    for key, name in catchments.items():
+        if name != catchment_name:
+            continue
+        rows = dio.get_polys_by_catchment_id(key, 2000)
         poly_list = list(np.array(rows)[:,0])
         print(len(poly_list))
         if source is None:
@@ -38,7 +46,8 @@ def metric_by_catchment():
             source = pd.concat([source, tmp], ignore_index=True)
     return source
 
-data = metric_by_catchment()
+catchments = get_catchments()
+data = metric_by_catchment(catchments[1])
 data[data.columns[2:10]] = data[data.columns[2:10]] * 100
 data.area = data.area/100 * np.pi
 source = ColumnDataSource(data=data.loc[data.year==1987])
@@ -46,7 +55,6 @@ source = ColumnDataSource(data=data.loc[data.year==1987])
 type_list = data.type.unique() 
 color_map = plasma(len(type_list))
 type_list = tuple(type_list)
-print(color_map)
 
 color_mapper = factor_cmap('type', palette=color_map, factors=type_list)
 
@@ -74,6 +82,14 @@ catchment_legend = Legend(items=[LegendItem(label=field('type'), renderers=[cc])
 # this one is not working for single glypy
 #catchment_legend.click_policy="hide"
 plot.add_layout(catchment_legend, 'left')
+
+def catchment_update(attrname, old, new):
+    c_name = c_select.value
+    global data
+    data = metric_by_catchment(c_name)
+    data[data.columns[2:10]] = data[data.columns[2:10]] * 100
+    data.area = data.area/100 * np.pi
+    select_update(attrname, old, new)
 
 def select_update(attrname, old, new):
     year = year_slider.value
@@ -114,11 +130,13 @@ y_select.on_change('value', select_update)
 l_select = Select(title="Legend", value='ANAE_type', options=['ANAE_type', 'water_max', 'pv_max'], height=50, width=100, 
         sizing_mode="fixed")
 l_select.on_change('value', select_update)
+c_select = Select(title="Catchment", value=catchments[1], options=list(catchments.values()), height=50, width=100, sizing_mode="fixed")
+c_select.on_change('value', catchment_update)
 
 checkbox_group = CheckboxGroup(labels=list(type_list), active=list(np.arange(len(type_list))), height=600, width=300, sizing_mode="scale_height")
 checkbox_group.on_change('active', select_update)
 
-controls = column(x_select, y_select, l_select, checkbox_group, year_slider, height=100, width=400, sizing_mode='fixed')
+controls = column(x_select, y_select, l_select, c_select, checkbox_group, year_slider, height=100, width=400, sizing_mode='fixed')
 
 layout = layout([
     [controls, plot],

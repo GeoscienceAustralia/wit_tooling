@@ -363,8 +363,8 @@ class DIO(object):
                     "key (poly_id) references polygons (poly_id)")
             conn.dbConn.commit()
 
-        if self.event_metrics.tableName not in matview_names:
-            conn.cursor.execute(event_metrics_view)
+        #if self.event_metrics.tableName not in matview_names:
+        #    conn.cursor.execute(event_metrics_view)
 
         if self.catchment.tableName not in table_names:
             self._logger.info("Creating table %r", self.data_tablename)
