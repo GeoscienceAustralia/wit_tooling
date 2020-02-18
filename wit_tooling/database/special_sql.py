@@ -16,20 +16,15 @@ create table first_observe (poly_id, pv, openwater, wet) as
     """
 
 year_metric_view = """
-create or replace view year_metrics (poly_id, year, min, max) as
-    (select poly_id, extract(year from datetime) as year, min(tci_w + wofs_water), max(tci_w + wofs_water)
+create or replace view year_metrics (poly_id, year, wet_min, wet_max, wet_mean, water_min, water_max, water_mean,
+pv_min, pv_max, pv_mean) as
+    (select poly_id, extract(year from datetime) as year, min(tci_w + wofs_water), max(tci_w + wofs_water),
+        avg(tci_w+wofs_water), min(wofs_water), max(wofs_water), avg(wofs_water),
+            min(fc_pv), max(fc_pv), avg(fc_pv)
         from data group by year, poly_id 
         order by year asc
     )
     """
-
-pv_year_metric_view ="""
-create or replace view pv_year_metrics (poly_id, year, min, max, mean) as
-    (select poly_id, extract(year from datetime) as year, min(fc_pv), max(fc_pv), avg(fc_pv)
-        from data group by year, poly_id 
-        order by year asc
-    )
-"""
 
 event_metrics_time_table = """
 create table event_metrics_time (event_id bigserial primary key,
@@ -88,19 +83,17 @@ create table incomplete_event (poly_id, end_time, start_time, duration) as
 """
 
 event_metrics_view = """
-create or replace view event_metrics as
-(select ev.event_id, ev.poly_id, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean,
-    max(data.tci_w+data.wofs_water)*ST_area(polygons.geometry)/10000 as area,
-    ev.end_time, ev.start_time, ev.duration from data, polygons, event_metrics_time
-    full join (select event_id, poly_id, end_time, start_time, duration from event_metrics_time) as ev using (event_id)
-    where data.poly_id = ev.poly_id and data.poly_id = polygons.poly_id and data.datetime >= ev.start_time and data.datetime <= ev.end_time
-    group by ev.event_id, ev.poly_id, ev.end_time, ev.start_time, ev.duration, polygons.geometry
-union
-select ev.event_id, ev.poly_id, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean,
-    max(data.tci_w+data.wofs_water)*ST_area(polygons.geometry)/10000 as area,
-    ev.end_time, ev.start_time, ev.duration from data, polygons, incomplete_event
-    full join (select event_id, poly_id, end_time, start_time, duration from incomplete_event) as ev using (event_id)
-    where data.poly_id = ev.poly_id and data.poly_id = polygons.poly_id and data.datetime >= ev.start_time and data.datetime <= ev.end_time
-    group by ev.event_id, ev.poly_id, ev.end_time, ev.start_time, ev.duration, polygons.geometry
+create materialized view event_metrics as
+(
+select ev.*, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean,
+    max(data.tci_w+data.wofs_water)*max(ST_area(polygons.geometry))/10000 as area from data, polygons, event_metrics_time as ev
+    where polygons.poly_id = ev.poly_id and data.poly_id = polygons.poly_id and data.datetime >= ev.start_time and data.datetime <= ev.end_time
+    group by ev.event_id
+    union all
+select ev.*, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean,
+    max(data.tci_w+data.wofs_water)*max(ST_area(polygons.geometry))/10000 as area from data, polygons, incomplete_event as ev
+    where polygons.poly_id = ev.poly_id and data.poly_id = polygons.poly_id and data.datetime >= ev.start_time and data.datetime <= ev.end_time
+    group by ev.event_id
+
 )
 """
