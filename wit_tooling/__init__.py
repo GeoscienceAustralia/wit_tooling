@@ -23,7 +23,7 @@ def get_year_metrics_with_type_area(poly_list):
     rows = dio.get_year_metrics_with_type_area(poly_list) 
     return pd.DataFrame(rows, columns=['poly_id', 'year', 'wet_min', 'wet_max', 'wet_mean',
                                         'water_min', 'water_max', 'water_mean',
-                                        'pv_min', 'pv_max', 'pv_mean', 'area', 'type'])
+                                        'pv_min', 'pv_max', 'pv_mean', 'poly_name', 'area', 'type'])
 
 def get_event_metrics(poly_list):
     dio = DIO.get()

@@ -333,7 +333,7 @@ class DIO(object):
         if self.first_observe.tableName not in table_names:
             conn.cursor.execute(first_observe_view)
 
-        if self.year_metrics.tableName not in view_names:
+        if self.year_metrics.tableName not in matview_names:
             conn.cursor.execute(year_metric_view)
 
 
@@ -363,8 +363,8 @@ class DIO(object):
                     "key (poly_id) references polygons (poly_id)")
             conn.dbConn.commit()
 
-        #if self.event_metrics.tableName not in matview_names:
-        #    conn.cursor.execute(event_metrics_view)
+        if self.event_metrics.tableName not in matview_names:
+            conn.cursor.execute(event_metrics_view)
 
         if self.catchment.tableName not in table_names:
             self._logger.info("Creating table %r", self.data_tablename)
@@ -765,7 +765,7 @@ class DIO(object):
         if not isinstance(poly_list, self._SEQUENCE_TYPES):
             poly_list = [poly_list]
 
-        query = "SELECT a.*, ST_Area(b.geometry)/10000 as area, c.properties::json->%%s as type "\
+        query = "SELECT a.*, b.poly_name, ST_Area(b.geometry)/10000 as area, c.properties::json->%%s as type "\
                 " FROM %s as a, %s as b, %s as c WHERE a.poly_id=b.poly_id AND a.poly_id=c.poly_id AND a.poly_id IN %%s "\
                 " ORDER by a.poly_id ASC, a.year ASC"\
                 %(self.year_metrics.tableName, self.polygons.tableName, "poly_properties")
@@ -846,8 +846,16 @@ class DIO(object):
             row = self.get_matching_rows(conn, data_query, data_params, None)
         return row 
 
+    def set_work_mem(self, conn):
+        query = "SET work_mem to '8GB'"
+        conn.cursor.execute(query)
+
     def query_with_return(self, query):
         with ConnectionFactory.get() as conn:
             conn.cursor.execute(query)
-            output = conn.cursor.fetchall()
-        return output
+            try:
+                output = conn.cursor.fetchall()
+            except:
+                print("no return")
+            else:
+                return output

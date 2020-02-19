@@ -9,7 +9,7 @@ import pandas as pd
 from bokeh.io import curdoc
 from bokeh.layouts import layout, column, row, WidgetBox, gridplot
 from bokeh.models import CheckboxGroup, Select,  CategoricalColorMapper, ColumnDataSource,HoverTool, Label, SingleIntervalTicker, Slider, DatetimeTickFormatter, YearsTicker, Legend, TapTool, CustomJS, LegendItem, field
-from bokeh.palettes import plasma, brewer
+from bokeh.palettes import viridis, brewer
 from bokeh.plotting import figure
 from bokeh.transform import factor_cmap, LinearColorMapper 
 from bokeh.events import DoubleTap
@@ -48,13 +48,13 @@ def metric_by_catchment(catchment_name):
 
 catchments = get_catchments()
 data = metric_by_catchment(catchments[1])
-data[data.columns[2:10]] = data[data.columns[2:10]] * 100
+data[data.columns[2:11]] = data[data.columns[2:11]] * 100
 data.area = data.area/100 * np.pi
 source = ColumnDataSource(data=data.loc[data.year==1987])
 
 type_list = data.type.unique() 
-color_map = plasma(len(type_list))
-type_list = tuple(type_list)
+color_map = viridis(len(type_list))
+type_list = tuple(list(reversed(type_list)))
 
 color_mapper = factor_cmap('type', palette=color_map, factors=type_list)
 
@@ -87,7 +87,7 @@ def catchment_update(attrname, old, new):
     c_name = c_select.value
     global data
     data = metric_by_catchment(c_name)
-    data[data.columns[2:10]] = data[data.columns[2:10]] * 100
+    data[data.columns[2:11]] = data[data.columns[2:11]] * 100
     data.area = data.area/100 * np.pi
     select_update(attrname, old, new)
 
@@ -107,7 +107,7 @@ def select_update(attrname, old, new):
 
     legend_key = l_select.value
     if legend_key == "ANAE_type":
-        color_map = plasma(len(types))
+        color_map = viridis(len(types))
         color_mapper = factor_cmap('type', palette=color_map, factors=types)
         catchment_legend.items = [LegendItem(label=field('type'), renderers=[cc])]
         plot.legend.visible = True
@@ -120,12 +120,15 @@ def select_update(attrname, old, new):
 
     cc.glyph.fill_color=color_mapper
     source.data = data.loc[(data.year==int(year)) & (data.type.isin(types))]
-    
+
+plot.add_tools(HoverTool(tooltips=[('Id', "@poly_id"), ('Polygon', "@poly_name"), ("Catchment", "@catchment")],
+show_arrow=False, point_policy='follow_mouse'))
+
 year_slider = Slider(start=1987, end=2019, value=1987, step=1, title="Year", height=50, width=300, sizing_mode='fixed')
 year_slider.on_change('value', select_update)
-x_select = Select(title="X-axis", value='water_max', options=list(data.columns[2:10]), height=50, width=100, sizing_mode="fixed")
+x_select = Select(title="X-axis", value='water_max', options=list(data.columns[2:11]), height=50, width=100, sizing_mode="fixed")
 x_select.on_change('value', select_update)
-y_select = Select(title="Y-axis", value='pv_max', options=list(data.columns[2:10]), height=50, width=100, sizing_mode="fixed")
+y_select = Select(title="Y-axis", value='pv_max', options=list(data.columns[2:11]), height=50, width=100, sizing_mode="fixed")
 y_select.on_change('value', select_update)
 l_select = Select(title="Legend", value='ANAE_type', options=['ANAE_type', 'water_max', 'pv_max'], height=50, width=100, 
         sizing_mode="fixed")

@@ -16,7 +16,7 @@ create table first_observe (poly_id, pv, openwater, wet) as
     """
 
 year_metric_view = """
-create or replace view year_metrics (poly_id, year, wet_min, wet_max, wet_mean, water_min, water_max, water_mean,
+create materialized view year_metrics (poly_id, year, wet_min, wet_max, wet_mean, water_min, water_max, water_mean,
 pv_min, pv_max, pv_mean) as
     (select poly_id, extract(year from datetime) as year, min(tci_w + wofs_water), max(tci_w + wofs_water),
         avg(tci_w+wofs_water), min(wofs_water), max(wofs_water), avg(wofs_water),
