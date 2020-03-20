@@ -8,5 +8,5 @@
 
 source $HOME/setup-datacube-up2date.sh
 
-echo $proc $feature $datasets $aggregate $shapefile
-mpirun -np $proc -bind-to none python3 -m mpi4py.futures wetland_brutal.py wit-cal --feature-list $feature --datasets $datasets --aggregate $aggregate $shapefile
+echo $feature $datasets $aggregate $pdyaml $shapefile
+mpirun -np 9 -bind-to none python3 -m mpi4py.futures wetland_brutal.py wit-cal --feature-list $feature --datasets $datasets --aggregate $aggregate --product-yaml $pdyaml $shapefile
