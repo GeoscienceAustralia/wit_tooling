@@ -45,6 +45,7 @@ Here `$in` is `$out` from the last step and `--union True` means we want to unio
 `$aggregate = True/False` where `True` means no single path/row contains the polygon(s) so that the aggregation over time is required, `False` means no aggregating is needed. Note, this can be told from the file name of `$feature`
 
 - Plot the data
+
 `python wetland_brutal.py wit-plot --output-location $folder --feature $id --output-name $property $shapefile`
 
 `$folder` is where to store the csvs and pngs;
