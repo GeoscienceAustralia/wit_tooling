@@ -1,4 +1,4 @@
-`job_sub_in.sh` is used to submit job in bulk to PBS queue
+`job_sub_in.sh` is used to submit jobs in bulk to PBS queue
 
 usage: 
 -----
