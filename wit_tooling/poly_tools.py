@@ -54,8 +54,6 @@ def query_wit_data(shape):
     dio = DIO.get()
     poly_hash = poly_wkt(shape['geometry']) 
     poly_name, rows = dio.get_data_by_geom(poly_hash)
-    print("poly name", poly_name.split('_'))
-    #poly_name = '_'.join([str(shape['properties']['REFCODE']), shape['properties']['RAMSAR_NAM'], shape['properties']['WETLAND_NA']])
     return poly_name, np.array(rows)
 
 def plot_to_png(count, polyName):

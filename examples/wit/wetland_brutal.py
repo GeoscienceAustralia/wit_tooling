@@ -33,6 +33,8 @@ from mpi4py.futures import MPIPoolExecutor
 from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
 from wit_tooling import poly_wkt
+from wit_tooling import query_wit_data, plot_to_png
+
 
 _LOG = logging.getLogger('wit_tool')
 stdout_hdlr = logging.StreamHandler(sys.stdout)
@@ -385,6 +387,48 @@ product_definition = click.option('--product-yaml', type=str, help='yaml file of
 @click.group(help=__doc__)
 def main():
     pass
+
+@main.command(name='wit-plot', help='Plot png and dump csv from database')
+@shapefile_path
+@click.option('--output-location',  type=str, help='Location to save the query results', default='./results')
+@click.option('--output-name',  type=str, help='A property from shape file used to populate file name, default feature_id', default=None)
+@click.option('--feature',  type=int, help='An individual polygon to plot', default=None)
+
+def wit_plot(shapefile, output_location, output_name, feature):
+    if not path.exists(output_location):
+        os.makedirs(output_location)
+
+    with fiona.open(shapefile) as allshapes:
+        start_f = iter(allshapes)
+        while True:
+            try:
+                shape = next(start_f)
+            except:
+                break
+            if feature is not None:
+                if int(shape['id']) != feature:
+                    continue
+
+            poly_name, count = query_wit_data(shape)
+            if count.size == 0:
+                continue
+            if output_name is None:
+                file_name = shape['id']
+                if poly_name == '__':
+                    poly_name = str(shape['id'])
+            else:
+                file_name = shape['properties'].get(output_name, shape['id'])
+                poly_name = file_name
+            if "/" in poly_name:
+                poly_name = poly_name.replace("/", " ")
+            pd.DataFrame(data=count, columns=['TIME', 'BS', 'NPV', 'PV', 'WET', 'WATER']).to_csv(
+                    '/'.join([output_location, file_name+'.csv']), index=False)
+            b_image = plot_to_png(count, poly_name)
+            with open('/'.join([output_location, file_name+'.png']), 'wb') as f:
+                f.write(b_image.read())
+
+            if feature is not None:
+                break
 
 @main.command(name='wit-query', help='Query datasets by path/row')
 @shapefile_path
