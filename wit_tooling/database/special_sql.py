@@ -93,7 +93,5 @@ select ev.*, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_wa
 select ev.*, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean,
     max(data.tci_w+data.wofs_water)*max(ST_area(polygons.geometry))/10000 as area from data, polygons, incomplete_event as ev
     where polygons.poly_id = ev.poly_id and data.poly_id = polygons.poly_id and data.datetime >= ev.start_time and data.datetime <= ev.end_time
-    group by ev.event_id
-
 )
 """
