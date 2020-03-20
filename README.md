@@ -57,3 +57,9 @@ Here `$in` is `$out` from the last step and `--union True` means we want to unio
 Why:
 ---
 I know the workflow is a bit (or very?) stupid but just hear me out. First, datacube query will block you forever if you don't play nice with it and you don't want to waste time/ksu (or whatever it costs). Secondly, i/o slows down things a lot if open/close file happens too often, so we want to read in as much as we can when a file is opened. Partially datacube query reason stands here as well. Last, you want to do many small polygons all at once with parallization, current case, which is `MPI/OpenMP`
+
+Run `wit-cal` in bulk:
+----------------------
+Normal case, `wit-pathrow` and `wit-query` doesn't require a PBS job, both can run comfortably and efficiently with resource on VDI. However, if you prefer to run it with a PBS job, a single node with `ncpus=9,mem=36GB` is enough.
+
+Refer `aux/README.md` on how to submit job to run `wit-cal` parallelly in bulk on NCI 
