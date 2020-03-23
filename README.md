@@ -13,23 +13,45 @@ Requirements:
 -----------
 OpenMPI >= 4.0.1.
 
+datacube_stats on the refactor branch: https://github.com/opendatacube/datacube-stats/tree/refactor
+
 A database with postgis enabled.
 
 Other auxilliary data/scripts/shapefiles...
 
+Installation:
+-----------
+
+Install datacube-stats/refactor
+```
+cd $yourworkfolder
+git clone git@github.com:opendatacube/datacube-stats.git
+git checkout refactor
+cd datacube-stats
+pip install --user -e .
+```
+Install wit_tooling
+```
+cd $yourworkfolder
+git clone git@github.com:emmaai/wit_tooling.git
+cd wit_tooling
+pip install --user -e .
+```
+
 How To:
 ------
+`cd $yourworkfolder/examples/wit`
 
 You'll need four steps. 
 
 - Collect all the polygons interact with/contained by the landsat path/row and ouput the results as `txt` in `$out`. 
   Two reasons: 1. Aggregate by time if the polygon(s) would cover more than one path/row; 2. See `Secondly` in Section `Why`
   
-`mpirun python -m mpi4py.futures wetland_brutal wit-pathrow --output-location $out $shapefile`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-pathrow --output-location $out $shapefile`
 
 - Query the datacube database with results from the last step. Reason: See `Firstly` in Section `Why`.
 
-`mpirun python -m mpi4py.futures wetland_brutal wit-query --input-folder $in --output-location $out --union True --product-yaml $pd_yaml $shapefile`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder $in --output-location $out --union True --product-yaml $pd_yaml $shapefile`
 
 Here `$in` is `$out` from the last step and `--union True` means we want to union all the polygons and query with the unioned shape. If we set `--union False`, it will query by the shape of path/row. Usually `--union True` is a better idea, especially the tree algorithm is used and parallelized by `MPI`. It is faster than the time that is spent in querying by a larger shape and reading larger amount of data. The later slows down computation the most and reduces efficiency.
 
@@ -37,7 +59,7 @@ Here `$in` is `$out` from the last step and `--union True` means we want to unio
 
 - Perform the computation (Finally)
 
-`mpirun python -m mpi4py.futures wetland_brutal wit-cal --feature-list $feature --datasets $datasets --aggregate $aggregate --product-yaml $pd_yaml $shapefile`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list $feature --datasets $datasets --aggregate $aggregate --product-yaml $pd_yaml $shapefile`
 
 `$feature` is a `txt` file in folder `$in` from the last step, which contains all the polygons to be computed together;
 
