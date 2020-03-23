@@ -11,7 +11,7 @@ How to generate wit data with the tool
 
 Requirements:
 -----------
-MPI >= 4.0.1.
+OpenMPI >= 4.0.1.
 
 A database with postgis enabled.
 
