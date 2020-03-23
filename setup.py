@@ -47,7 +47,7 @@ setup(
     packages=find_packages(exclude=['test']),
     python_requires='>=3.5',
     setup_requires=["Cython>=0.23"],
-    install_requires=["numpy>=1.16", "Cython>=0.23", "mpi4py>=3.03"],
+    install_requires=["numpy>=1.16", "Cython>=0.23", "mpi4py>=3.0.3"],
     extras_require={
                     'dev': ['check-manifest'],
     },
