@@ -21,8 +21,9 @@ Other auxilliary data/scripts/shapefiles...
 
 Installation:
 -----------
+- OpenMPI 4.0 can be manually installed or on NCI by `module load openmpi/4.0.1`
 
-Install datacube-stats/refactor
+- Install datacube-stats/refactor
 ```
 cd $yourworkfolder
 git clone git@github.com:opendatacube/datacube-stats.git
@@ -30,7 +31,25 @@ git checkout refactor
 cd datacube-stats
 pip install --user -e .
 ```
-Install wit_tooling
+Or if one uses the env offered by `module load dea`, a hard-set of `PYTHONPATH` is needed.
+DONOT do 
+```
+pip install --user -e .
+```
+instead DO
+```
+export PYTHONPATH=$yourworkfolder/datacube-stats:$PYTHONPATH
+```
+
+Check `datacube-stats` is installed correctly, the version should be as shown below
+```
+In [1]: import datacube_stats                                                                                                                         
+
+In [2]: datacube_stats.__version__                                                                                                                    
+Out[2]: '2.0beta'
+```
+
+- Install wit_tooling
 ```
 cd $yourworkfolder
 git clone git@github.com:emmaai/wit_tooling.git
@@ -38,26 +57,98 @@ cd wit_tooling
 pip install --user -e .
 ```
 
+Note: substitute `$yourworkfolder` accordingly.
+
 How To:
 ------
 `cd $yourworkfolder/examples/wit`
 
-You'll need four steps. 
+One'll need four steps. 
 
 - Collect all the polygons interact with/contained by the landsat path/row and ouput the results as `txt` in `$out`. 
   Two reasons: 1. Aggregate by time if the polygon(s) would cover more than one path/row; 2. See `Secondly` in Section `Why`
   
 `mpirun python -m mpi4py.futures wetland_brutal.py wit-pathrow --output-location $out $shapefile`
 
+Example:
+
+`
+mpirun python -m mpi4py.futures wetland_brutal.py wit-pathrow --output-location /g/data1a/u46/users/ea6141/wlinsight/sadew/new /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp 
+`
+
+with `$out = /g/data1a/u46/users/ea6141/wlinsight/sadew/new`, 
+
+and `$shapefile=/g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+
+The results would look like
+```
+[ea6141@vdi-n24 wlinsight]$ ls sadew/new
+contain_22.txt  contain_265.txt  contain_266.txt  contain_267.txt  contain_268.txt  contain_518.txt  contain_519.txt
+```
+where all the polygons in `$shapefile` contained by the name feature `$id` in landsat path/row shapefile should be listed in `contain_$id.txt`. For instance, the content of `contain_22.txt` would be
+```
+[ea6141@vdi-n24 wlinsight]$ cat sadew/new/contain_22.txt 
+71
+72
+73
+74
+75
+79
+80
+82
+83
+84
+85
+86
+87
+89
+90
+93
+94
+95
+98
+100
+102
+106
+107
+108
+109
+110
+```
+When a polygon is big enough such that no signle path/row would intersect with the polygon for more than 90% of the area. The intersect between polygons and path/row would be listed as
+```
+[ea6141@vdi-n24 wlinsight]$ cat anae/done/intersect_16_17_18_739_740_741.txt 
+417688
+```
+which means polygon feature `417688` in `$shapefile` intersects with path/row `16, 17, 17, 749, 740 and 741`. In such case, an aggregation over time slice is required in `wit-cal`.
+
+
 - Query the datacube database with results from the last step. Reason: See `Firstly` in Section `Why`.
 
 `mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder $in --output-location $out --union True --product-yaml $pd_yaml $shapefile`
 
-Here `$in` is `$out` from the last step and `--union True` means we want to union all the polygons and query with the unioned shape. If we set `--union False`, it will query by the shape of path/row. Usually `--union True` is a better idea, especially the tree algorithm is used and parallelized by `MPI`. It is faster than the time that is spent in querying by a larger shape and reading larger amount of data. The later slows down computation the most and reduces efficiency.
+Here `$in` is `$out` from the last step
+
+`--union True` means we want to union all the polygons and query with the unioned shape. If we set `--union False`, it will query by the shape of path/row. Usually `--union True` is a better idea, especially the tree algorithm is used and parallelized by `MPI`. It is faster than the time that is spent in querying by a larger shape and reading larger amount of data. The later slows down computation the most and reduces efficiency.
 
 `$pd_yaml` is virtual product recipe
 
+Example:
+
+`
+mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder /g/data1a/u46/users/ea6141/wlinsight/sadew/new --output-location /g/data1a/u46/users/ea6141/wlinsight/sadew/query --union True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp
+`
+The result would look like
+```
+[ea6141@vdi-n24 wlinsight]$ ls sadew/query/
+22.pkl  265.pkl  266.pkl  267.pkl  268.pkl  518.pkl  519.pkl
+
+```
+where each  `.pkl` file holds the datasets from the query from each path/row, e.g., `22.pkl` has the datasets from `contain_22.txt`.
+
 - Perform the computation (Finally)
+
+This step generates the results and saves them into database. A computational node with enough memory is required. Scripts of processing a single path/row and in bulk are provided https://github.com/GeoscienceAustralia/wit_tooling/tree/master/aux, refer for more details.
 
 `mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list $feature --datasets $datasets --aggregate $aggregate --product-yaml $pd_yaml $shapefile`
 
@@ -67,6 +158,12 @@ Here `$in` is `$out` from the last step and `--union True` means we want to unio
 
 `$aggregate = True/False` where `True` means no single path/row contains the polygon(s) so that the aggregation over time is required, `False` means no aggregating is needed. Note, this can be told from the file name of `$feature`
 
+
+Example
+
+`
+mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/sadew/new/contain_22.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/sadew/query/22.pkl --aggregate False --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp
+`
 - Plot the data
 
 `python wetland_brutal.py wit-plot --output-location $folder --feature $id --output-name $property $shapefile`
@@ -85,4 +182,4 @@ Run `wit-cal` in bulk:
 ----------------------
 Normal case, `wit-pathrow` and `wit-query` doesn't require a PBS job, both can run comfortably and efficiently with resource on VDI. However, if you prefer to run it with a PBS job, a single node with `ncpus=9,mem=36GB` is enough.
 
-Refer `aux/README.md` on how to submit job to run `wit-cal` parallelly in bulk on NCI 
+Refer https://github.com/GeoscienceAustralia/wit_tooling/tree/master/aux on how to submit job to run `wit-cal` parallelly in bulk on NCI 
