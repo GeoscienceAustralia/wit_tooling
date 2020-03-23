@@ -11,6 +11,7 @@ How to generate wit data with the tool
 
 Requirements:
 -----------
+MPI >= 4.0.1.
 
 A database with postgis enabled.
 
@@ -19,7 +20,7 @@ Other auxilliary data/scripts/shapefiles...
 How To:
 ------
 
-You'll need three steps. 
+You'll need four steps. 
 
 - Collect all the polygons interact with/contained by the landsat path/row and ouput the results as `txt` in `$out`. 
   Two reasons: 1. Aggregate by time if the polygon(s) would cover more than one path/row; 2. See `Secondly` in Section `Why`
