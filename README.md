@@ -52,7 +52,7 @@ Out[2]: '2.0beta'
 - Install wit_tooling
 ```
 cd $yourworkfolder
-git clone git@github.com:emmaai/wit_tooling.git
+git clone git@github.com:GeoscienceAustralia/wit_tooling.git
 cd wit_tooling
 pip install --user -e .
 ```
