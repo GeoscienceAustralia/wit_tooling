@@ -85,7 +85,7 @@ The results would look like
 [ea6141@vdi-n24 wlinsight]$ ls sadew/new
 contain_22.txt  contain_265.txt  contain_266.txt  contain_267.txt  contain_268.txt  contain_518.txt  contain_519.txt
 ```
-where all the polygons in `$shapefile` contained by the name feature `$id` in landsat path/row shapefile should be listed in `contain_$id.txt`. For instance, the content of `contain_22.txt` would be
+where all the polygons in `$shapefile` contained by the feature `$id` in landsat path/row shapefile should be listed in `contain_$id.txt`. For instance, the content of `contain_22.txt` would be
 ```
 [ea6141@vdi-n24 wlinsight]$ cat sadew/new/contain_22.txt 
 71
@@ -115,12 +115,12 @@ where all the polygons in `$shapefile` contained by the name feature `$id` in la
 109
 110
 ```
-When a polygon is big enough such that no signle path/row would intersect with the polygon for more than 90% of the area. The intersect between polygons and path/row would be listed as
+When a polygon has a large area such that no signle path/row would intersect with the polygon for more than 90% of the area. The intersect between polygons and path/row would be listed as
 ```
 [ea6141@vdi-n24 wlinsight]$ cat anae/done/intersect_16_17_18_739_740_741.txt 
 417688
 ```
-which means polygon feature `417688` in `$shapefile` intersects with path/row `16, 17, 17, 749, 740 and 741`. In such case, an aggregation over time slice is required in `wit-cal`.
+which means polygon feature `417688` in `$shapefile` intersects with path/row `16, 17, 17, 749, 740 and 741`. In such case, an aggregation over time slice is required in `wit-cal` by setting `--aggregate True`.
 
 
 - Query the datacube database with results from the last step. Reason: See `Firstly` in Section `Why`.
@@ -129,15 +129,14 @@ which means polygon feature `417688` in `$shapefile` intersects with path/row `1
 
 Here `$in` is `$out` from the last step
 
-`--union True` means we want to union all the polygons and query with the unioned shape. If we set `--union False`, it will query by the shape of path/row. Usually `--union True` is a better idea, especially the tree algorithm is used and parallelized by `MPI`. It is faster than the time that is spent in querying by a larger shape and reading larger amount of data. The later slows down computation the most and reduces efficiency.
+`--union True` means that we want to union all the polygons and query with the unioned shape. If we set `--union False`, it will query by the shape of path/row. Usually `--union True` is a better idea, especially the tree algorithm is used and parallelized by `MPI`. It is faster than the time that is spent in querying by a larger shape and reading larger amount of data. The later slows down computation the most and reduces efficiency.
 
 `$pd_yaml` is virtual product recipe
 
 Example:
 
-`
-mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder /g/data1a/u46/users/ea6141/wlinsight/sadew/new --output-location /g/data1a/u46/users/ea6141/wlinsight/sadew/query --union True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp
-`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder /g/data1a/u46/users/ea6141/wlinsight/sadew/new --output-location /g/data1a/u46/users/ea6141/wlinsight/sadew/query --union True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+
 The result would look like
 ```
 [ea6141@vdi-n24 wlinsight]$ ls sadew/query/
@@ -161,9 +160,11 @@ This step generates the results and saves them into database. A computational no
 
 Example
 
-`
-mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/sadew/new/contain_22.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/sadew/query/22.pkl --aggregate False --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp
-`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/sadew/new/contain_22.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/sadew/query/22.pkl --aggregate False --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+
+Or deal with the large polygons not contained by a single path/row, set `--aggregate True`, i.e., 
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/anae/intersect_16_17_18_739_740_741.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/anane/query/16_17_18_739_740_741.pkl --aggregate True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+
 - Plot the data
 
 `python wetland_brutal.py wit-plot --output-location $folder --feature $id --output-name $property $shapefile`
@@ -174,6 +175,27 @@ mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data
 
 `$property` is used to populate the output filename and plot title, it can be an entry in `properties` of polygons in the shape file `$shapefile`, or left as default(`None`) to be `id`;
 
+Example:
+
+`python wetland_brutal.py wit-plot --output-location sadew/results --output-name Site_Name shapefiles/waterfowlandwetlands_3577.shp`
+, where `Site_Name` is an entry under `properties` for each polygon in the shapefile.
+
+The results look like:
+```
+[ea6141@vdi-n24 wlinsight]$ ls sadew/results/
+100_Lake St Clair.csv                     33_Aldinga Scrub Washpool area, Acacia Tce.csv                  67_Park Hill.csv
+100_Lake St Clair.png                     33_Aldinga Scrub Washpool area, Acacia Tce.png                  67_Park Hill.png
+101_Sheepwash Swamp.csv                   34_Boggy Lake.csv                                               68_Big Reedy.csv
+101_Sheepwash Swamp.png                   34_Boggy Lake.png                                               68_Big Reedy.png
+102_Lake George.csv                       35_Myponga Reservoir.csv                                        69_Jaffray Swamp.csv
+102_Lake George.png                       35_Myponga Reservoir.png                                        69_Jaffray Swamp.png
+103_Oschar Swamp.csv                      36_Tolderol Game Reserve.csv                                    6_Lake Woolpolool.csv
+103_Oschar Swamp.png                      36_Tolderol Game Reserve.png                                    6_Lake Woolpolool.png
+104_Iluka.csv                             37_Finniss River.csv                                            70_Lake Nadzeb.csv
+104_Iluka.png                             37_Finniss River.png                                            70_Lake Nadzeb.png
+105_Mullins Swamp.csv                     38_Finniss River.csv                                            71_Schofield Swamp.csv
+105_Mullins Swamp.png                     38_Finniss River.png                                            71_Schofield Swamp.png
+```
 Why:
 ---
 I know the workflow is a bit (or very?) stupid but just hear me out. First, datacube query will block you forever if you don't play nice with it and you don't want to waste time/ksu (or whatever it costs). Secondly, i/o slows down things a lot if open/close file happens too often, so we want to read in as much as we can when a file is opened. Partially datacube query reason stands here as well. Last, you want to do many small polygons all at once with parallization, current case, which is `MPI/OpenMP`
