@@ -61,7 +61,7 @@ Note: substitute `$yourworkfolder` accordingly.
 
 How To:
 ------
-`cd $yourworkfolder/examples/wit`
+`cd $yourworkfolder/wit_tooling/examples/wit`
 
 One'll need four steps. 
 
