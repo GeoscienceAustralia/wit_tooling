@@ -308,14 +308,14 @@ def intersect_with_landsat(shape, landsat=landsat_shp):
             else:
                 pl_wetland.append(Polygon(coords[0]))
 
-        pl_wetland = MultiPolygon(pl_wetland)
+        pl_wetland = MultiPolygon(pl_wetland).buffer(0)
     else:
         if not crs_same:
             y, x = transform(o_crs, d_crs, np.array(geometry['coordinates'][0])[:, 0],
                                      np.array(geometry['coordinates'][0])[:, 1])
-            pl_wetland = Polygon(np.concatenate([[x], [y]]).transpose())   
+            pl_wetland = Polygon(np.concatenate([[x], [y]]).transpose()).buffer(0)
         else:
-            pl_wetland = Polygon(geometry['coordinates'][0])
+            pl_wetland = Polygon(geometry['coordinates'][0]).buffer(0)
 
     contain = []
     intersect = []
