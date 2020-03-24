@@ -7,6 +7,12 @@ usage:
 
 `$input` is the folder where the feature list and query results are stored
 
+Example:
+
+`./job_sub_in.sh sadew/ shapefiles/waterfowlandwetlands_3577.shp`
+
+Note: Add your work folder as prefix if needed.
+
 In the file:
 -----------
 
