@@ -1,4 +1,5 @@
 `job_sub_in.sh` is used to submit jobs in bulk to PBS queue
+`wetland.sh` is used to setup the environment to run wit tooling
 
 usage: 
 -----
