@@ -80,12 +80,12 @@ with `$out = /g/data1a/u46/users/ea6141/wlinsight/sadew/new`,
 
 and `$shapefile=/g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
 
-The results would look like
+The results in your output folder would look like:
 ```
 [ea6141@vdi-n24 wlinsight]$ ls sadew/new
 contain_22.txt  contain_265.txt  contain_266.txt  contain_267.txt  contain_268.txt  contain_518.txt  contain_519.txt
 ```
-where all the polygons in `$shapefile` contained by the feature `$id` in landsat path/row shapefile should be listed in `contain_$id.txt`. For instance, the content of `contain_22.txt` would be
+Results filenames will either start with `contain` or with `intersect`. Full filename convention will look like `contain_$id.txt`. The naming convention `contain` means that all the polygons are either contained by the feature or the area of the intersection between the polygon and the feature is more than 90% of the area of the polygon. The feature here is the feature `$id` representing a landsat path row in the landsat path/row shapefile. For instance, the content of `contain_22.txt` would be
 ```
 [ea6141@vdi-n24 wlinsight]$ cat sadew/new/contain_22.txt 
 71
@@ -115,7 +115,10 @@ where all the polygons in `$shapefile` contained by the feature `$id` in landsat
 109
 110
 ```
-When a polygon has a large area such that no signle path/row would intersect with the polygon for more than 90% of the area. The intersect between polygons and path/row would be listed as
+Where 71..110 are the feature `$id` representing the polygons in your input `$shapefile`.
+
+
+When a polygon has a large area such that no single path/row would intersect with the polygon for more than 90% of the area. The intersect between polygons and path/row would be listed as
 ```
 [ea6141@vdi-n24 wlinsight]$ cat anae/done/intersect_16_17_18_739_740_741.txt 
 417688
