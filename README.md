@@ -160,6 +160,7 @@ This step generates the results and saves them into database. A computational no
 
 `$aggregate = True/False` where `True` means no single path/row contains the polygon(s) so that the aggregation over time is required, `False` means no aggregating is needed. Note, this can be told from the file name of `$feature`
 
+For details of how the aggregation works, refer to the WIT documentation #fixme add link
 
 Example
 

@@ -3,7 +3,7 @@ from datacube.virtual.impl import VirtualDatasetBox
 from datacube.virtual import construct
 from datacube.utils.geometry import CRS, Geometry
 from datacube_stats.utils.dates import date_sequence
-from datacube.virtual.transformations import MakeMask, ApplyMask 
+from datacube.virtual.transformations import MakeMask, ApplyMask
 from datacube_stats.external import MaskByValue
 
 from shapely.geometry import Polygon, MultiPolygon, mapping, box, shape
@@ -29,7 +29,7 @@ import pandas as pd
 import re
 
 from mpi4py import MPI
-from mpi4py.futures import MPIPoolExecutor 
+from mpi4py.futures import MPIPoolExecutor
 from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
 from wit_tooling import poly_wkt
@@ -60,7 +60,7 @@ def db_insert_catchment(dio, shape):
     feature_id = shape['id']
     catchment_id = dio.insert_catchment(catchment_name=catchment_name,
             shapefile=shapefile, feature_id=feature_id, geometry=polygon_wkt(geometry))
-    return catchment_id 
+    return catchment_id
 
 def insert_catchment(catchment_shape):
     dio = DIO.get()
@@ -218,8 +218,8 @@ def iter_args(time, ready, poly_list, perc):
 
 def all_polygons(fc_product, grouped, fid_list, mask_array, aggregate, time_chunk):
 
-    i = 0 
-    j = time_chunk 
+    i = 0
+    j = time_chunk
 
     # check last update time
     dio = DIO.get()
@@ -346,7 +346,7 @@ def iter_shapes(t_file, shapefile):
         shape = next(start_f)
         with open(t_file, 'r') as f:
             for line in f:
-                shape_id = line 
+                shape_id = line
                 while int(shape_id) != int(shape['id']):
                     shape = next(start_f)
                 yield shape
@@ -419,8 +419,8 @@ def wit_plot(shapefile, output_location, output_name, feature):
             else:
                 file_name = shape['properties'].get(output_name, shape['id'])
                 poly_name = file_name
-            if "/" in poly_name:
-                poly_name = poly_name.replace("/", " ")
+            if "/" in file_name:
+                file_name = file_name.replace("/", " ")
             pd.DataFrame(data=count, columns=['TIME', 'BS', 'NPV', 'PV', 'WET', 'WATER']).to_csv(
                     '/'.join([output_location, file_name+'.csv']), index=False)
             b_image = plot_to_png(count, poly_name)
@@ -452,10 +452,10 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, un
     with fiona.open(landsat_shp) as shapes:
         landsat_crs = shapes.crs_wkt
         tile_list = list(shapes)
-                
+
     for (_, _, filenames) in walk(input_folder):
         tile_files.extend(filenames)
-    
+
     with fiona.open(shapefile) as allshapes:
         crs = allshapes.crs_wkt
 
@@ -490,7 +490,7 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, un
                         future_list.append(future)
                     _LOG.debug("len future list %s", len(future_list))
 
-            query_poly = query_poly[0]                      
+            query_poly = query_poly[0]
             query_poly = Geometry(mapping(box(*query_poly.bounds)), CRS(crs))
             _LOG.debug("query_poly %s", query_poly)
         else:
@@ -544,7 +544,7 @@ def match_pathrow(shapefile,  output_location):
                         f.write(pl_name+'\n')
 
     _LOG.info("total poly %s", total_poly)
-    return 
+    return
 
 @main.command(name='wit-cal', help='Compute area percentage of polygons')
 @shapefile_path
@@ -563,7 +563,7 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
     elif not path.exists(feature_list):
         _LOG.error("can't find feature list at %s", feature_list)
         sys.exit(0)
-    
+
     if datasets is None:
         _LOG.error("datasets can't be None")
         sys.exit(0)
@@ -597,7 +597,7 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
     with open(datasets, 'rb') as f:
         grouped = pickle.load(f)
     _LOG.debug("grouped datasets %s", grouped)
-    
+
     mask_array = generate_raster(shape_vessel, grouped.geobox)
     all_polygons(fc_product, grouped, poly_vessel, mask_array, aggregate, time_chunk)
     _LOG.info("finished")
