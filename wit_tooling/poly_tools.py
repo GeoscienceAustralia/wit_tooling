@@ -17,10 +17,10 @@ def poly_wkt(geometry, srid=3577):
     if geometry['type'] == 'MultiPolygon':
         pl_wetland = []
         for coords in geometry['coordinates']:
-            pl_wetland.append(Polygon(coords[0]))
+            pl_wetland.append(Polygon(coords[0]).buffer(0))
         pl_wetland = MultiPolygon(pl_wetland)
     else:
-        pl_wetland = Polygon(geometry['coordinates'][0])
+        pl_wetland = Polygon(geometry['coordinates'][0]).buffer(0)
     return 'SRID=%s;' % (srid)+pl_wetland.to_wkt()
 
 def hash_polygon(geometry, area_leng):

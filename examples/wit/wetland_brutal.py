@@ -270,6 +270,47 @@ def all_polygons(fc_product, grouped, fid_list, mask_array, aggregate, time_chun
     for poly_id in fid_list:
         filter_store_result((poly_id, time, True, result))
 
+def get_intersect_polygons(poly_id, geometry, shapefile):
+    dio = DIO.get()
+    intersect_with = dio.get_intersect_polygons(poly_id, poly_wkt(geometry), shapefile)
+    return ([geometry, poly_id], intersect_with)
+
+def split_polygons(results, shapefile):
+    initial_key = 1
+    poly_vessel = dict({0:[]})
+    shape_vessel = dict({0:[]})
+
+    future_list = []
+    with MPIPoolExecutor(max_workers=8) as executor:
+        for re in results:
+            if re[0] is not None:
+                future = executor.submit(get_intersect_polygons, re[1], re[0], shapefile)
+                future_list.append(future)
+
+    for future in future_list:
+        re, intersect_with = future.result()
+        if intersect_with == ():
+            shape_vessel[0].append(re)
+            poly_vessel[0].append(re[1])
+        else:
+            j = 0
+            while j < initial_key:
+                append_match = False
+                for sp in intersect_with:
+                    if sp[0] in poly_vessel[j]:
+                        append_match = True
+                        break
+                if append_match == True:
+                    j += 1
+                else:
+                    break
+            if j == initial_key:
+                initial_key += 1
+                shape_vessel[j] = []
+                poly_vessel[j] = []
+            shape_vessel[j].append(re)
+            poly_vessel[j].append(re[1])
+    return  shape_vessel, poly_vessel
 
 def get_polygon_list(feature_list, shapefile):
     with fiona.open(shapefile) as allshapes:
@@ -288,47 +329,17 @@ def shape_list(shapefile):
         for shape in allshapes:
             yield(shape)
 
-def intersect_with_landsat(shape, landsat=landsat_shp):
-    with fiona.open(landsat) as shapes:
-        crs = shapes.crs_wkt
-    geometry = shape['geometry']
-    if CRS(crs).epsg == 3577:
-        crs_same = True
-    else:
-        crs_same = False
-        o_crs = Proj('EPSG:3577')
-        d_crs = Proj(crs)
-    if geometry['type'] == 'MultiPolygon':
-        pl_wetland = []
-        for coords in geometry['coordinates']:
-            if not crs_same:
-                y, x = transform(o_crs, d_crs, np.array(coords[0])[:, 0],
-                                np.array(coords[0])[:, 1])
-                pl_wetland.append(Polygon(np.concatenate([[x], [y]]).transpose()))
-            else:
-                pl_wetland.append(Polygon(coords[0]))
-
-        pl_wetland = MultiPolygon(pl_wetland).buffer(0)
-    else:
-        if not crs_same:
-            y, x = transform(o_crs, d_crs, np.array(geometry['coordinates'][0])[:, 0],
-                                     np.array(geometry['coordinates'][0])[:, 1])
-            pl_wetland = Polygon(np.concatenate([[x], [y]]).transpose()).buffer(0)
-        else:
-            pl_wetland = Polygon(geometry['coordinates'][0]).buffer(0)
-
+def intersect_with_landsat(shape):
+    dio = DIO.get()
     contain = []
     intersect = []
-    with fiona.open(landsat) as shapes:
-        for s in shapes:
-            pl_landsat = Polygon(s['geometry']['coordinates'][0])
-            if pl_wetland.within(pl_landsat):
-                contain.append(s['id'])
-            elif pl_wetland.intersects(pl_landsat):
-                if (pl_wetland.intersection(pl_landsat).area / pl_wetland.area < 0.9):
-                    intersect.append(s['id'])
-                else:
-                    contain.append(s['id'])
+    results = dio.get_intersect_landsat_pathrow(poly_wkt(shape['geometry']))
+    for re in results:
+        if re[1] < 0.9:
+            intersect.append(str(re[0]))
+        else:
+            contain.append(str(re[0]))
+
     return (shape['id'], contain, intersect)
 
 def query_process(args):
@@ -436,10 +447,9 @@ def wit_plot(shapefile, output_location, output_name, feature):
 @click.option('--start-date',  type=str, help='Start date, default=1987-01-01', default='1987-01-01')
 @click.option('--end-date',  type=str, help='End date, default=2020-01-01', default='2020-01-01')
 @click.option('--output-location',  type=str, help='Location to save the query results', default='./query_results')
-@click.option('--union',  type=bool, help='If union all the polygons', default=False)
 @product_definition
 
-def wit_query(shapefile, input_folder, start_date, end_date, output_location, union, product_yaml):
+def wit_query(shapefile, input_folder, start_date, end_date, output_location, product_yaml):
     tile_files = []
 
     if not path.exists(output_location):
@@ -448,10 +458,6 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, un
     with open(product_yaml, 'r') as f:
         recipe = yaml.safe_load(f)
     fc_product = construct(**recipe)
-
-    with fiona.open(landsat_shp) as shapes:
-        landsat_crs = shapes.crs_wkt
-        tile_list = list(shapes)
 
     for (_, _, filenames) in walk(input_folder):
         tile_files.extend(filenames)
@@ -464,39 +470,34 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, un
         _LOG.debug("query %s", '_'.join(tile_id))
         if path.exists(output_location+'/'+'_'.join(tile_id)+'.pkl'):
             continue
-        if len(tile_id) > 1 or union:
-            future_list = []
-            query_poly = []
-            poly_list = iter_shapes('/'.join([input_folder, t_file]), shapefile)
-            with MPIPoolExecutor() as executor:
-                while True:
-                    if len(query_poly) == 1:
-                        break
-                    if future_list != []:
-                        poly_list = future_list
-                        future_list = []
-                        query_poly = []
-                    for poly in poly_list:
-                        if isinstance(poly, dict):
-                            query_poly.append(convert_shape_to_polygon(poly))
-                        else:
-                            query_poly.append(poly.result())
-                        if len(query_poly) == 10:
-                            future = executor.submit(union_shapes, query_poly)
-                            future_list.append(future)
-                            query_poly = []
-                    if len(query_poly) > 1:
+        future_list = []
+        query_poly = []
+        poly_list = iter_shapes('/'.join([input_folder, t_file]), shapefile)
+        with MPIPoolExecutor() as executor:
+            while True:
+                if len(query_poly) == 1:
+                    break
+                if future_list != []:
+                    poly_list = future_list
+                    future_list = []
+                    query_poly = []
+                for poly in poly_list:
+                    if isinstance(poly, dict):
+                        query_poly.append(convert_shape_to_polygon(poly))
+                    else:
+                        query_poly.append(poly.result())
+                    if len(query_poly) == 10:
                         future = executor.submit(union_shapes, query_poly)
                         future_list.append(future)
-                    _LOG.debug("len future list %s", len(future_list))
+                        query_poly = []
+                if len(query_poly) > 1:
+                    future = executor.submit(union_shapes, query_poly)
+                    future_list.append(future)
+                _LOG.debug("len future list %s", len(future_list))
 
-            query_poly = query_poly[0]
-            query_poly = Geometry(mapping(box(*query_poly.bounds)), CRS(crs))
-            _LOG.debug("query_poly %s", query_poly)
-        else:
-            shape = tile_list[int(tile_id[0])]
-            query_poly = Geometry(shape['geometry'], CRS(landsat_crs))
-
+        query_poly = query_poly[0]
+        query_poly = Geometry(mapping(box(*query_poly.bounds)), CRS(crs))
+        _LOG.debug("query_poly %s", query_poly)
         query_list = iter_queries(fc_product, query_poly, start_date, end_date)
         with MPIPoolExecutor(max_workers=8) as executor:
             results = executor.map(query_process, query_list)
@@ -577,20 +578,17 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
 
     poly_list =  get_polygon_list(feature_list, shapefile)
 
-    poly_vessel = []
-    shape_vessel = []
     time_start_insert = datetime.now()
     with MPIPoolExecutor(max_workers=8) as executor:
         result = executor.map(query_store_polygons, poly_list)
 
-    for re in result:
-        if re[0] is not None:
-            shape_vessel.append(re)
-            poly_vessel.append(re[1])
-    _LOG.debug("gone over all the polygons in %s", datetime.now() - time_start_insert)
-    _LOG.debug("number of polygons %s", len(poly_vessel))
+    shape_vessel, poly_vessel = split_polygons(result, shapefile)
 
-    if poly_vessel == []:
+    _LOG.debug("gone over all the polygons in %s", datetime.now() - time_start_insert)
+    for j in range(len(shape_vessel)):
+        _LOG.debug("number of polygons %s in vessel %s", len(poly_vessel[j]), j)
+
+    if poly_vessel[0] == []:
         _LOG.info("all done")
         sys.exit(0)
 
@@ -598,9 +596,13 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
         grouped = pickle.load(f)
     _LOG.debug("grouped datasets %s", grouped)
 
-    mask_array = generate_raster(shape_vessel, grouped.geobox)
-    all_polygons(fc_product, grouped, poly_vessel, mask_array, aggregate, time_chunk)
-    _LOG.info("finished")
+    for j in range(len(shape_vessel)):
+        shape_value = shape_vessel[j]
+        poly_value = poly_vessel[j]
+        mask_array = generate_raster(shape_value, grouped.geobox)
+        all_polygons(fc_product, grouped, poly_value, mask_array, aggregate, time_chunk)
+        _LOG.info("done processeing %s th vessel", j)
+    _LOG.info("all done")
     sys.exit(0)
 
 if __name__ == '__main__':
