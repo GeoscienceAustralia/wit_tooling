@@ -503,10 +503,9 @@ class DIO(object):
         query = "INSERT  INTO %s (poly_name, poly_hash, geometry, " \
                 " shapefile, feature_id, result_ready, last_update) " \
                 " VALUES (%%s, ST_GeoHash(ST_Transform(%%s::geometry, 4326), 32), %%s, %%s, %%s, FALSE, to_timestamp(0)) " \
-                " ON CONFLICT (poly_hash) DO UPDATE SET poly_name=%%s" \
                 " RETURNING poly_id, result_ready" \
                 % (self.poly_tablename,)
-        sqlParams = (poly_name, geometry, geometry, shapefile, feature_id, poly_name)
+        sqlParams = (poly_name, geometry, geometry, shapefile, feature_id)
         conn.cursor.execute(query, sqlParams)
         numRowsInserted = conn.cursor.fetchall()
         assert len(numRowsInserted) == 1, 'Unexpected num fields: ' + repr(len(numRowsInserted))
@@ -639,6 +638,9 @@ class DIO(object):
         return pathrow_id
 
     def insert_polygon(self, poly_name, geometry, shapefile, feature_id):
+        poly_id, poly_name, state = self.get_id_by_geom(self.poly_tablename, geometry)
+        if poly_id > 0:
+            return poly_id, state
         with ConnectionFactory.get() as conn:
             poly_id, state = self.insert_get_polygon(conn, poly_name, geometry, shapefile, feature_id)
         return poly_id, state
@@ -697,25 +699,32 @@ class DIO(object):
         return time
 
     def get_id_by_geom(self, table_name, geometry):
+        query = "SELECT %s, %s"
         if table_name == self.catchment.tableName:
             poly_id = 'catchment_id'
             poly_name = 'catchment_name'
-            poly_hash = 'catchment_hash'
         elif table_name == self.polygons.tableName:
             poly_id = 'poly_id'
             poly_name = 'poly_name'
-            poly_hash = 'poly_hash'
-        query = "SELECT %s, %s from %s " \
-                "where %s=ST_GeoHash(ST_Transform(%%s::geometry,4326), 32)" \
-                % (poly_id, poly_name, table_name, poly_hash,)
+            query += ", result_ready"
+
+        query += " from %s where ST_Equals(geometry, %%s::geometry)"
+        query = query % (poly_id, poly_name, table_name)
         sql_params = (geometry,)
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, None)
             if len(row) == 0:
-                return 0, ''
+                if table_name == self.catchment.tableName:
+                    return 0, ''
+                elif table_name == self.polygons.tableName:
+                    return 0, '', ''
+
             poly_id = row[0][0]
             poly_name = row[0][1]
-            return poly_id, poly_name
+            if table_name == self.catchment.tableName:
+                return poly_id, poly_name
+            elif table_name == self.polygons.tableName:
+                return poly_id, poly_name, row[0][2]
 
     def get_data_by_poly_id(self, poly_id):
         query, sql_params, max_rows = self.construct_query(self.data,
@@ -740,7 +749,7 @@ class DIO(object):
         return row
 
     def get_data_by_geom(self, geometry):
-        poly_id, poly_name = self.get_id_by_geom(self.poly_tablename, geometry)
+        poly_id, poly_name, state = self.get_id_by_geom(self.poly_tablename, geometry)
         if poly_id == 0:
             return '', []
         row = self.get_data_by_poly_id(poly_id)

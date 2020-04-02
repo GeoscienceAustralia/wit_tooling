@@ -13,7 +13,7 @@ from .database.io import DIO
 
 register_matplotlib_converters()
 
-def poly_wkt(geometry, srid=3577):
+def convert_shape_to_polygon(geometry):
     if geometry['type'] == 'MultiPolygon':
         pl_wetland = []
         for coords in geometry['coordinates']:
@@ -41,6 +41,10 @@ def poly_wkt(geometry, srid=3577):
             pl_wetland = Polygon(ext)
         if pl_wetland.is_valid == False:
             pl_wetland = pl_wetland.buffer(0)
+    return pl_wetland
+
+def poly_wkt(geometry, srid=3577):
+    pl_wetland = convert_shape_to_polygon(geometry)
     return 'SRID=%s;' % (srid)+pl_wetland.to_wkt()
 
 def hash_polygon(geometry, area_leng):

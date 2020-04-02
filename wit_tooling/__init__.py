@@ -1,4 +1,4 @@
-from .poly_tools import poly_wkt, hash_polygon, hash_from_shape, query_wit_data, plot_to_png
+from .poly_tools import convert_shape_to_polygon, poly_wkt, hash_polygon, hash_from_shape, query_wit_data, plot_to_png
 from .database.io import DIO
 import pandas as pd
 
