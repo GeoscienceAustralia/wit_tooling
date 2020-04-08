@@ -39,7 +39,7 @@ extensions = [
 
 setup(
     name="wit_tooling",
-    version='0.1',
+    version='2.1',
     description='WIT tooling',
     long_description_content_type='text/markdown',
     author='Emma Ai',

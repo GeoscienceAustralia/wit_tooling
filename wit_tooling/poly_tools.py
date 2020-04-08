@@ -5,6 +5,7 @@ import numpy as np
 import io
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.patches as mpatches
 from matplotlib.patches import Rectangle
 from textwrap import wrap
 from datetime import datetime
@@ -13,14 +14,38 @@ from .database.io import DIO
 
 register_matplotlib_converters()
 
-def poly_wkt(geometry, srid=3577):
+def convert_shape_to_polygon(geometry):
     if geometry['type'] == 'MultiPolygon':
         pl_wetland = []
         for coords in geometry['coordinates']:
-            pl_wetland.append(Polygon(coords[0]))
+            ext = coords[0]
+            if len(coords) > 1:
+                poly = Polygon(ext, coords[1:])
+            else:
+                poly = Polygon(ext)
+            if poly.is_valid == False:
+                poly = poly.buffer(0)
+                if poly.geom_type == 'MultiPolygon':
+                    for ep in poly:
+                        pl_wetland.append(ep)
+                else:
+                    pl_wetland.append(poly)
+            else:
+                pl_wetland.append(poly)
         pl_wetland = MultiPolygon(pl_wetland)
     else:
-        pl_wetland = Polygon(geometry['coordinates'][0])
+        coords = geometry['coordinates']
+        ext = coords[0]
+        if len(coords) > 1:
+            pl_wetland = Polygon(ext, coords[1:])
+        else:
+            pl_wetland = Polygon(ext)
+        if pl_wetland.is_valid == False:
+            pl_wetland = pl_wetland.buffer(0)
+    return pl_wetland
+
+def poly_wkt(geometry, srid=3577):
+    pl_wetland = convert_shape_to_polygon(geometry)
     return 'SRID=%s;' % (srid)+pl_wetland.to_wkt()
 
 def hash_polygon(geometry, area_leng):
@@ -62,6 +87,12 @@ def plot_to_png(count, polyName):
             '#3f9b0b',
             '#e6daa6',
             '#60460f']
+    labels = ['open water',
+            'wet',
+            'green veg',
+            'dry veg',
+            'bare soil',
+            ]
 
     fig = plt.figure(figsize = (22,6))
     plt.stackplot(count[:, 0].astype('datetime64[s]'), 
@@ -70,18 +101,19 @@ def plot_to_png(count, polyName):
             count[:, 3].astype('float32') * 100, 
             count[:, 2].astype('float32') * 100,
             count[:, 1].astype('float32') * 100,
-            labels=['open water',
-            'wet',
-            'green veg',
-            'dry veg',
-            'bare soil',
-            ], colors=pal, alpha = 0.6)
+            colors=pal, alpha = 0.6)
     #set axis limits to the min and max
     time_min = count[:, 0].astype('datetime64[s]')[0]
     time_max = count[:, 0].astype('datetime64[s]')[-1]
     plt.axis(xmin = time_min, xmax = time_max, ymin = 0, ymax = 100)
     #add a legend and a tight plot box
-    plt.legend(loc='lower left', framealpha=0.6)
+    legend_handles = []
+    pal.reverse()
+    labels.reverse()
+    for p, l in zip(pal, labels):
+        legend_handles.append(mpatches.Patch(color=p, alpha=0.6, label=l))
+
+    plt.legend(handles=legend_handles, loc='lower left', framealpha=0.6)
     plt.tight_layout()
     years = mdates.YearLocator(1)
     yearsFmt = mdates.DateFormatter('%Y')

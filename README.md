@@ -171,17 +171,17 @@ Or deal with the large polygons not contained by a single path/row, set `--aggre
 
 - Plot the data
 
-`python wetland_brutal.py wit-plot --output-location $folder --feature $id --output-name $property $shapefile`
+`python wetland_brutal.py wit-plot --output-location $folder --feature $id -n $property_1 -n $property_2 $shapefile`
 
 `$folder` is where to store the csvs and pngs;
 
 `$id` is `id` in shape file `$shapefile`, it can be left to default(`None`) such that all the polygons will be processed;
 
-`$property` is used to populate the output filename and plot title, it can be an entry in `properties` of polygons in the shape file `$shapefile`, or left as default(`None`) to be `id`;
+`$property_1`, `$property_2` is used to populate the output filename and plot title, it can be an entry in `properties` of polygons in the shape file `$shapefile`, or left as default(`None`) to be `id`;
 
 Example:
 
-`python wetland_brutal.py wit-plot --output-location sadew/results --output-name Site_Name shapefiles/waterfowlandwetlands_3577.shp`
+`python wetland_brutal.py wit-plot --output-location sadew/results -n Site_Name shapefiles/waterfowlandwetlands_3577.shp`
 , where `Site_Name` is an entry under `properties` for each polygon in the shapefile.
 
 The results look like:

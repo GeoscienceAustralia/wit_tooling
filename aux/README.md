@@ -1,6 +1,37 @@
+`job_normal.sh` is used to submit individual job to PBS queue
+
 `job_sub_in.sh` is used to submit jobs in bulk to PBS queue
 
 `wetland.sh` is used to setup the environment to run wit tooling
+
+`job_normal.sh`
+======
+
+usage:
+---
+
+`qsub -l ncpus=$num_cpus,mem=${mem}GB -v threads=$((num_cpus * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh`
+
+`$num_cpus`, `$mem` refer the manual of `qsub`
+
+`threads`, `feature`, `datasets` and `aggregate` are the parameters required by `job_normal`.
+
+- `threads` is the number of threads used in `OpenMP`. We oversubscribe it by 4 times of the CPUS for a). To employ the hyper-threading technique; b). increase the efficiency of CPU usage since the job is I/O bound.
+
+- `$feature` is the parameter in `--feature-list $feature` in `wetland_brutal.py wit-cal`.
+
+- `$datasets` is the parameter in `--datasets $datasets` in `wetland_brutal.py wit-cal`
+
+- `$aggregate` is the parameter in `--aggregate $aggregate` in `wetland_brutal.py wit-cal`
+
+- `$PDYAML` is the parameter in `--product-yaml $PDYAML` in `wetland_brutal.py wit-cal`
+
+- `$shapefile` is the parameter in `wetland_brutal.py wit-cal`
+
+Example
+------
+
+`qsub -N anae_1005 -l ncpus=48,mem=192GB -v threads=192,feature=anae//new/contain_1005.txt,datasets=anae//query/1005.pkl,aggregate=False,pdyaml=/g/data/u46/users/ea6141/wlinsight/fc_pd.yaml,shapefile=/g/data/r78/DEA_Wetlands/shapefiles/MDB_ANAE_Aug2017_modified_2019_SB_3577.shp job_normal.sh`
 
 `job_sub_in.sh`
 =============
@@ -25,7 +56,8 @@ In the file:
 
 `num_thread` is calculated regards to how many polygons would be parallelized, yet the minimum should be `9`, DONOT change it.
 
-`mem` is calculated as how a job would be charged on NCI, the multiplier `4` CAN be dialed up until total memory hits the limit of `192GB`
+`mem` is calculated as how a job would be charged on NCI, the multiplier `UMEM=4` CAN be dialed up until total memory hits the limit of `192GB`. As in the script, when the aggregation over time slices is required, we set `UMEM=8`.
+
 
 `wetland.sh`
 ============

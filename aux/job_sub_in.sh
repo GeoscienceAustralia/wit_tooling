@@ -1,6 +1,8 @@
 #!/bin/bash
 NCPUS=48
 MEM=$((48*4))
+#how much memory charged over 1 cpu
+UMEM=4
 
 # change this accordingly
 PDYAML=fc_pd.yaml
@@ -38,10 +40,14 @@ for file in $1/query/*.pkl; do
             echo feature list for $tile_id not exist
             continue
         else
+            # note: some big polygons might need dial up a bit
+            # we dial up to double for aggregation over time slices
             aggregate=True
+            UMEM=8
         fi
     else
         aggregate=False
+        UMEM=4
     fi
     num_thread=$(cat $feature | wc -l)
     if [ $num_thread -lt 9 ]; then
@@ -52,16 +58,15 @@ for file in $1/query/*.pkl; do
         fi
     fi 
 
-    # note: some big polygons might need dial up a bit
-    mem=$((num_thread * 4))
+    mem=$((num_thread * UMEM))
     if [ $mem -gt $MEM ]; then
         mem=$MEM
     fi
-    echo qsub -N wet_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
-    jobid=$(qselect -N wet_$tile_id)
+    echo qsub -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
+    jobid=$(qselect -N ${1//\/}_$tile_id)
     if [ "$jobid" == "" ]; then
-        qsub -N wet_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
+        qsub -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
     else
-        qsub -W depend=afterany:$jobid -N wet_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
+        qsub -W depend=afterany:$jobid -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
     fi
 done
