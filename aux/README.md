@@ -58,6 +58,7 @@ In the file:
 
 `mem` is calculated as how a job would be charged on NCI, the multiplier `UMEM=4` CAN be dialed up until total memory hits the limit of `192GB`. As in the script, when the aggregation over time slices is required, we set `UMEM=8`.
 
+
 `wetland.sh`
 ============
 
