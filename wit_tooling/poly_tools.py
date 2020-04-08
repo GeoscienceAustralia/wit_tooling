@@ -5,6 +5,7 @@ import numpy as np
 import io
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.patches as mpatches
 from matplotlib.patches import Rectangle
 from textwrap import wrap
 from datetime import datetime
@@ -86,6 +87,12 @@ def plot_to_png(count, polyName):
             '#3f9b0b',
             '#e6daa6',
             '#60460f']
+    labels = ['open water',
+            'wet',
+            'green veg',
+            'dry veg',
+            'bare soil',
+            ]
 
     fig = plt.figure(figsize = (22,6))
     plt.stackplot(count[:, 0].astype('datetime64[s]'), 
@@ -94,18 +101,19 @@ def plot_to_png(count, polyName):
             count[:, 3].astype('float32') * 100, 
             count[:, 2].astype('float32') * 100,
             count[:, 1].astype('float32') * 100,
-            labels=['open water',
-            'wet',
-            'green veg',
-            'dry veg',
-            'bare soil',
-            ], colors=pal, alpha = 0.6)
+            colors=pal, alpha = 0.6)
     #set axis limits to the min and max
     time_min = count[:, 0].astype('datetime64[s]')[0]
     time_max = count[:, 0].astype('datetime64[s]')[-1]
     plt.axis(xmin = time_min, xmax = time_max, ymin = 0, ymax = 100)
     #add a legend and a tight plot box
-    plt.legend(loc='lower left', framealpha=0.6)
+    legend_handles = []
+    pal.reverse()
+    labels.reverse()
+    for p, l in zip(pal, labels):
+        legend_handles.append(mpatches.Patch(color=p, alpha=0.6, label=l))
+
+    plt.legend(handles=legend_handles, loc='lower left', framealpha=0.6)
     plt.tight_layout()
     years = mdates.YearLocator(1)
     yearsFmt = mdates.DateFormatter('%Y')

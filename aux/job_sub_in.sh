@@ -62,10 +62,10 @@ for file in $1/query/*.pkl; do
     if [ $mem -gt $MEM ]; then
         mem=$MEM
     fi
-    echo qsub -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 6)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
+    echo qsub -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
     jobid=$(qselect -N ${1//\/}_$tile_id)
     if [ "$jobid" == "" ]; then
-        qsub -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 6)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
+        qsub -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
     else
         qsub -W depend=afterany:$jobid -N ${1//\/}_$tile_id -l ncpus=$num_thread,mem=${mem}GB -v threads=$((num_thread * 4)),feature=$feature,datasets=$file,aggregate=$aggregate,pdyaml=$PDYAML,shapefile=$shapefile job_normal.sh
     fi

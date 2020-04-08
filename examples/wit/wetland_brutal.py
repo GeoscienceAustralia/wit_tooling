@@ -425,7 +425,7 @@ def wit_plot(shapefile, output_location, output_name, feature):
             print("data size", count.size)
             if count.size == 0:
                 continue
-            if output_name is None:
+            if len(output_name) == 0:
                 file_name = shape['id']
                 if poly_name == '__':
                     poly_name = str(shape['id'])
