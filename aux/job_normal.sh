@@ -8,5 +8,6 @@
 
 source $HOME/setup-datacube-up2date.sh
 
-echo $feature $datasets $aggregate $pdyaml $shapefile
+echo $threads $feature $datasets $aggregate $pdyaml $shapefile
+export OMP_NUM_THREADS=$threads
 mpirun -np 9 -bind-to none python3 -m mpi4py.futures wetland_brutal.py wit-cal --feature-list $feature --datasets $datasets --aggregate $aggregate --product-yaml $pdyaml $shapefile

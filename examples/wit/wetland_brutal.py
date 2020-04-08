@@ -32,7 +32,7 @@ from mpi4py import MPI
 from mpi4py.futures import MPIPoolExecutor
 from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
-from wit_tooling import poly_wkt
+from wit_tooling import poly_wkt, convert_shape_to_polygon
 from wit_tooling import query_wit_data, plot_to_png
 
 
@@ -83,6 +83,9 @@ def query_store_polygons(args):
     poly_name = get_polyName(shape)
 
     poly_id, state = db_insert_polygon(dio, poly_name, shape['geometry'], shapefile, shape_id)
+    #print("shape id", shape_id)
+    #print("site name", shape['properties']['Site_Name'])
+    #print("poly id", poly_id)
     if not state:
         return (shape['geometry'], poly_id)
     else:
@@ -289,6 +292,8 @@ def split_polygons(results, shapefile):
 
     for future in future_list:
         re, intersect_with = future.result()
+        #print("intersect with", len(intersect_with))
+        #print("poly", re[1])
         if intersect_with == ():
             shape_vessel[0].append(re)
             poly_vessel[0].append(re[1])
@@ -300,7 +305,7 @@ def split_polygons(results, shapefile):
                     if sp[0] in poly_vessel[j]:
                         append_match = True
                         break
-                if append_match == True:
+                if append_match:
                     j += 1
                 else:
                     break
@@ -362,16 +367,6 @@ def iter_shapes(t_file, shapefile):
                     shape = next(start_f)
                 yield shape
 
-def convert_shape_to_polygon(shape):
-    if shape['geometry']['type'] == 'MultiPolygon':
-        pl_wetland = []
-        for coords in shape['geometry']['coordinates']:
-            pl_wetland.append(Polygon(coords[0]))
-        pl_wetland = MultiPolygon(pl_wetland)
-    else:
-        pl_wetland = Polygon(shape['geometry']['coordinates'][0])
-    return pl_wetland
-
 def union_shapes(shape_list):
     query_poly = None
     for shape in shape_list:
@@ -401,13 +396,18 @@ def main():
 
 @main.command(name='wit-plot', help='Plot png and dump csv from database')
 @shapefile_path
-@click.option('--output-location',  type=str, help='Location to save the query results', default='./results')
-@click.option('--output-name',  type=str, help='A property from shape file used to populate file name, default feature_id', default=None)
+@click.option('--output-location', type=str, help='Location to save the query results', default='./results')
+@click.option('--output-name','-n', type=str, help='A property from shape file used to populate file name, default feature_id',
+        multiple=True, default=None)
 @click.option('--feature',  type=int, help='An individual polygon to plot', default=None)
 
 def wit_plot(shapefile, output_location, output_name, feature):
     if not path.exists(output_location):
         os.makedirs(output_location)
+
+    replace_special_characters = ["/"]
+    delete_special_characters = ["\"", "\'"]
+    name_length = 127
 
     with fiona.open(shapefile) as allshapes:
         start_f = iter(allshapes)
@@ -420,7 +420,9 @@ def wit_plot(shapefile, output_location, output_name, feature):
                 if int(shape['id']) != feature:
                     continue
 
+            print("shape id", shape['id'])
             poly_name, count = query_wit_data(shape)
+            print("data size", count.size)
             if count.size == 0:
                 continue
             if output_name is None:
@@ -428,10 +430,21 @@ def wit_plot(shapefile, output_location, output_name, feature):
                 if poly_name == '__':
                     poly_name = str(shape['id'])
             else:
-                file_name = shape['properties'].get(output_name, shape['id'])
+                file_name = []
+                str_length = (name_length - len(output_name) + 1) // len(output_name)
+                for oe in output_name:
+                    tmp = str(shape['properties'].get(oe, shape['id']))
+                    for sc in replace_special_characters:
+                        if sc in tmp:
+                            tmp = tmp.replace(sc, "_")
+                    for sc in delete_special_characters:
+                        if sc in tmp:
+                            tmp = tmp.replace(sc, "")
+                    tmp = tmp[:str_length] if (len(tmp) > str_length) else tmp
+                    file_name.append(tmp)
+                file_name = '_'.join(file_name)
                 poly_name = file_name
-            if "/" in file_name:
-                file_name = file_name.replace("/", " ")
+            print("shape name", poly_name)
             pd.DataFrame(data=count, columns=['TIME', 'BS', 'NPV', 'PV', 'WET', 'WATER']).to_csv(
                     '/'.join([output_location, file_name+'.csv']), index=False)
             b_image = plot_to_png(count, poly_name)
@@ -483,16 +496,17 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, pr
                     query_poly = []
                 for poly in poly_list:
                     if isinstance(poly, dict):
-                        query_poly.append(convert_shape_to_polygon(poly))
+                        query_poly.append(convert_shape_to_polygon(poly['geometry']))
                     else:
                         query_poly.append(poly.result())
                     if len(query_poly) == 10:
                         future = executor.submit(union_shapes, query_poly)
                         future_list.append(future)
                         query_poly = []
-                if len(query_poly) > 1:
+                if (len(future_list) > 0 and len(query_poly) == 1) or len(query_poly) > 1:
                     future = executor.submit(union_shapes, query_poly)
                     future_list.append(future)
+                    query_poly = []
                 _LOG.debug("len future list %s", len(future_list))
 
         query_poly = query_poly[0]
@@ -587,6 +601,7 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
     _LOG.debug("gone over all the polygons in %s", datetime.now() - time_start_insert)
     for j in range(len(shape_vessel)):
         _LOG.debug("number of polygons %s in vessel %s", len(poly_vessel[j]), j)
+        _LOG.debug("polygons %s in vessel %s", poly_vessel[j], j)
 
     if poly_vessel[0] == []:
         _LOG.info("all done")
@@ -597,6 +612,8 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
     _LOG.debug("grouped datasets %s", grouped)
 
     for j in range(len(shape_vessel)):
+        if poly_vessel[j] == []:
+            continue
         shape_value = shape_vessel[j]
         poly_value = poly_vessel[j]
         mask_array = generate_raster(shape_value, grouped.geobox)
