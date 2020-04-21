@@ -6,6 +6,21 @@ The virtual product recipe `aux/fc_pd.yaml`
 
 The job submit script `aux/*.sh`
 
+Versin info
+===========
+
+2.0:
+-----
+- First working version of wit
+  
+2.1:
+----
+- Compute overlapping polygons correctly
+- Popularize output csv and png file with the selected propoties from shape file
+- Mark not enough observations (less than 4 per year)
+- Add functionality of dumping csvs in database
+- Fix minor bugs
+  
 How to generate wit data with the tool
 ==========================
 
