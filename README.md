@@ -6,7 +6,7 @@ The virtual product recipe `aux/fc_pd.yaml`
 
 The job submit script `aux/*.sh`
 
-Versin info
+Version info
 ===========
 
 2.0:
