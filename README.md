@@ -16,8 +16,8 @@ Versin info
 2.1:
 ----
 - Compute overlapping polygons correctly
-- Popularize output csv and png file with the selected propoties from shape file
-- Mark not enough observations (less than 4 per year)
+- Popularize the names and titles of output csv and png file with the selected propoties from shape file
+- Mark not enough observations (less than 4 per year) in the plots
 - Add functionality of dumping csvs in database
 - Fix minor bugs
   
