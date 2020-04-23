@@ -4,7 +4,6 @@ from datacube.virtual import construct
 from datacube.utils.geometry import CRS, Geometry
 from datacube_stats.utils.dates import date_sequence
 from datacube.virtual.transformations import MakeMask, ApplyMask
-from datacube_stats.external import MaskByValue
 
 from shapely.geometry import Polygon, MultiPolygon, mapping, box, shape
 from pyproj import Proj, transform
@@ -15,9 +14,11 @@ import fiona.crs
 import yaml
 import numpy as np
 import xarray as xr
+import csv
 
 import sys
 import os
+import io
 from os import path, walk
 import logging
 from datetime import datetime
@@ -27,6 +28,7 @@ import copy
 import pickle
 import pandas as pd
 import re
+from zipfile import ZipFile
 
 from mpi4py import MPI
 from mpi4py.futures import MPIPoolExecutor
@@ -49,8 +51,11 @@ def db_insert_polygon(dio, poly_name, geometry, shapefile, feature_id):
     poly_id, state = dio.insert_polygon(poly_name=poly_name, geometry=geometry, shapefile=shapefile, feature_id=feature_id)
     return poly_id, state
 
-def db_last_update_time(dio, poly_list):
-    time = dio.get_latest_time(poly_list)
+def db_last_update_time(dio, poly_list, reset=False):
+    if not reset:
+        time = dio.get_latest_time(poly_list)
+    else:
+        time = dio.get_min_time(poly_list)
     return np.datetime64(time)
 
 def db_insert_catchment(dio, shape):
@@ -72,7 +77,8 @@ def insert_catchment(catchment_shape):
 
 def filter_store_result(args):
     poly_id, time, ready, result = args
-    time = time.astype('datetime64[us]').astype('str')
+    if not isinstance(time, str):
+        time = time.astype('datetime64[us]').astype('str')
     dio = DIO.get()
     item_id, state = dio.insert_update_result(poly_id, ready, time, *(result.astype('float')))
 
@@ -120,7 +126,7 @@ def aggregate_data(fc_results, water_results):
 
     return tmp, tmp_water
 
-def aggregate_over_timeslice(fc_product, grouped, i_start, ready, fid_list, mask_array):
+def aggregate_over_timeslice(fc_product, grouped, i_start, ready, poly_vessel, mask_array_dict):
     i_end = i_start + 1
     time = grouped.box.time.data[i_start]
     while i_end < grouped.box.time.size and (np.abs(time - grouped.box.time.data[i_end]).astype('timedelta64[D]')
@@ -130,27 +136,31 @@ def aggregate_over_timeslice(fc_product, grouped, i_start, ready, fid_list, mask
     future_list = []
     loaded = None
     _LOG.debug("aggregate over %s", (time, grouped.box.time.data[i_end-1]))
-    with MPIPoolExecutor(max_workers=8) as executor:
+    with MPIPoolExecutor() as executor:
         for i in range(i_start, i_end):
             to_split = VirtualDatasetBox(grouped.box.sel(time=grouped.box.time.data[i:i+1]), grouped.geobox,
                 grouped.load_natively, grouped.product_definitions, grouped.geopolygon)
             future = executor.submit(load_timeslice, fc_product, to_split)
             future_list.append(future)
-        for future in future_list:
-            if loaded is None:
-                loaded = future.result()
-            else:
-                loaded = xr.concat([loaded, future.result()], dim='time')
-                fc_data, water_data = aggregate_data(loaded.drop('water'), loaded.water)
-                loaded = xr.merge([fc_data, water_data.to_dataset()]).expand_dims('time')
+
+    for future in future_list:
+        if loaded is None:
+            loaded = future.result()
+        else:
+            loaded = xr.concat([loaded, future.result()], dim='time')
+            fc_data, water_data = aggregate_data(loaded.drop('water'), loaded.water)
+            loaded = xr.merge([fc_data, water_data.to_dataset()]).expand_dims('time')
     nodata = []
     for var in loaded.data_vars:
         nodata.append(loaded[var].attrs.get('nodata', 0))
     loaded = loaded.to_array()[:, 0, :, :]
-    perc, vfid_list = cal_area(loaded.data.astype('float32'), mask_array.astype('int64'),
-                    np.array(fid_list, dtype='int64'), np.array(nodata, dtype='float32'))
+    cal_result = []
+    for key in poly_vessel.keys():
+        perc, vfid_list = cal_area(loaded.data.astype('float32'), mask_array_dict[key].astype('int64'),
+                        np.array(poly_vessel[key], dtype='int64'), np.array(nodata, dtype='float32'))
+        cal_result.append((vfid_list, perc))
     with MPIPoolExecutor(max_workers=8) as executor:
-        executor.map(filter_store_result, iter_args(time, ready, vfid_list, perc))
+        executor.map(filter_store_result, iter_args(time, ready, cal_result))
     return i_end
 
 def get_polyName(feature):
@@ -173,7 +183,7 @@ def get_polyName(feature):
     polyName = f'{ID}_{CATCHMENT}_{HAB}'
     return(polyName)
 
-def load_timeslice(fc_product, to_split):
+def load_timeslice(fc_product, to_split, mask_by_wofs=True):
     load_start = datetime.now()
     results = fc_product.fetch(to_split)
     #results = fc_product.fetch(to_split,  dask_chunks={'time':1, 'y':2000, 'x':2000})
@@ -182,17 +192,21 @@ def load_timeslice(fc_product, to_split):
     flags = {'cloud': False,
             'cloud_shadow': False,
             'noncontiguous': False,
-            'water_observed': False
-            }
-    water_mask = MakeMask('water', flags).compute(water_mask)
-
-    flags = {'cloud': False,
-            'cloud_shadow': False,
-            'noncontiguous': False,
             'water_observed': True
             }
 
     water_value = MakeMask('water', flags).compute(water_value)
+
+    if mask_by_wofs:
+        flags = {'cloud': False,
+                'cloud_shadow': False,
+                'noncontiguous': False,
+                'water_observed': False
+                }
+        water_mask = MakeMask('water', flags).compute(water_mask)
+    else:
+        water_mask.water.data = ~water_value.water.data
+
     results = results.drop('water').merge(water_mask)
     results = ApplyMask('water', apply_to=['BS', 'PV', 'NPV', 'TCW']).compute(results)
     results = results.merge(water_value)
@@ -200,33 +214,43 @@ def load_timeslice(fc_product, to_split):
     _LOG.debug("load time slice %s", results.time.data)
     return results
 
-def cal_timeslice(fc_product, to_split, mask_array, fid_list, ready, nthreads):
+def cal_timeslice(fc_product, to_split, mask_array_dict, poly_vessel, ready, nthreads):
 
     results = load_timeslice(fc_product, to_split)
     nodata = []
     for var in results.data_vars:
         nodata.append(results[var].attrs.get('nodata', 0))
     results = results.to_array()[:, 0, :, :]
+    cal_result = []
     cal_start = datetime.now()
-    perc, vfid_list = cal_area(results.data.astype('float32'), mask_array.astype('int64'),
-            np.array(fid_list, dtype='int64'), np.array(nodata, dtype='float32'), nthreads)
+    for key in poly_vessel.keys():
+        _LOG.debug("cal vessel %s", key)
+        perc, vfid_list = cal_area(results.data.astype('float32'), mask_array_dict[key].astype('int64'),
+                np.array(poly_vessel[key], dtype='int64'), np.array(nodata, dtype='float32'), nthreads)
+        cal_result.append((vfid_list, perc))
     _LOG.debug("cal end %s", datetime.now() - cal_start)
     time = to_split.box.time.data[0]
-    return time, perc, vfid_list
+    return time, cal_result
 
-def iter_args(time, ready, poly_list, perc):
-    for poly_id, result in zip(poly_list, perc):
-        if poly_id >= 0:
-            yield((poly_id, time, ready, result))
+def iter_args(time, ready, cal_result):
+    # cal_result = [(poly_list, perc),...]
+    for ep in cal_result:
+        for poly_id, result in zip(ep[0], ep[1]):
+            if poly_id >= 0:
+                yield((poly_id, time, ready, result))
 
-def all_polygons(fc_product, grouped, fid_list, mask_array, aggregate, time_chunk):
+def all_polygons(fc_product, grouped, poly_vessel, mask_array_dict, aggregate, time_chunk, reset=False):
 
     i = 0
     j = time_chunk
 
     # check last update time
     dio = DIO.get()
-    time = db_last_update_time(dio, fid_list)
+    fid_list = []
+    for value in poly_vessel.values():
+        fid_list += value
+    time = db_last_update_time(dio, fid_list, reset)
+    _LOG.debug("time from db %s", time)
     while i < grouped.box.time.size:
         if time >= grouped.box.time.data[i]:
             i += 1
@@ -235,33 +259,30 @@ def all_polygons(fc_product, grouped, fid_list, mask_array, aggregate, time_chun
             i += 1
         else:
             break
-
-    _LOG.debug("time from db %s", time)
-
     ready = False
     nthreads = int(os.environ.get('OMP_NUM_THREADS', 8))//min(8, time_chunk)
     nthreads = max(nthreads, 1)
     while i < grouped.box.time.size:
         if aggregate:
         # aggregate over time
-            i = aggregate_over_timeslice(fc_product, grouped, i, ready, fid_list, mask_array)
+            i = aggregate_over_timeslice(fc_product, grouped, i, ready, poly_vessel, mask_array_dict)
             continue
 
         future_list = []
         # load data for j time slice
-        with MPIPoolExecutor(max_workers=8) as executor:
+        with MPIPoolExecutor() as executor:
             for i_start in range(i, min(grouped.box.time.size, i+j), 1):
                 to_split = VirtualDatasetBox(grouped.box.sel(time=grouped.box.time.data[i_start:i_start+1]), grouped.geobox,
                     grouped.load_natively, grouped.product_definitions, grouped.geopolygon)
                 _LOG.debug("submit job for %s", to_split)
-                future = executor.submit(cal_timeslice, fc_product, to_split, mask_array, fid_list, ready, nthreads)
+                future = executor.submit(cal_timeslice, fc_product, to_split, mask_array_dict, poly_vessel, ready, nthreads)
                 future_list.append(future)
 
         for future in future_list:
-            time, perc, vfid_list = future.result()
+            time, cal_result = future.result()
             insert_start = datetime.now()
             with MPIPoolExecutor(max_workers=8) as executor:
-                executor.map(filter_store_result, iter_args(time, ready, vfid_list, perc))
+                executor.map(filter_store_result, iter_args(time, ready, cal_result))
             _LOG.debug("insert end %s", datetime.now() - insert_start)
 
         i += j
@@ -292,8 +313,6 @@ def split_polygons(results, shapefile):
 
     for future in future_list:
         re, intersect_with = future.result()
-        #print("intersect with", len(intersect_with))
-        #print("poly", re[1])
         if intersect_with == ():
             shape_vessel[0].append(re)
             poly_vessel[0].append(re[1])
@@ -320,14 +339,8 @@ def split_polygons(results, shapefile):
 def get_polygon_list(feature_list, shapefile):
     with fiona.open(shapefile) as allshapes:
         crs = allshapes.crs_wkt
-        start_f = iter(allshapes)
-        shape = next(start_f)
-        with open(feature_list, 'r') as f:
-            for line in f:
-                shape_id = int(line.rstrip())
-                while shape_id != int(shape['id']):
-                    shape = next(start_f)
-                yield((shape, crs, shapefile))
+    for shape in iter_shapes(feature_list, shapefile):
+        yield((shape, crs, shapefile))
 
 def shape_list(shapefile):
     with fiona.open(shapefile) as allshapes:
@@ -335,16 +348,17 @@ def shape_list(shapefile):
             yield(shape)
 
 def intersect_with_landsat(shape):
-    dio = DIO.get()
     contain = []
     intersect = []
+    if shape.get('geometry') is None:
+        return (shape['id'], contain, intersect)
+    dio = DIO.get()
     results = dio.get_intersect_landsat_pathrow(poly_wkt(shape['geometry']))
     for re in results:
         if re[1] < 0.9:
             intersect.append(str(re[0]))
         else:
             contain.append(str(re[0]))
-
     return (shape['id'], contain, intersect)
 
 def query_process(args):
@@ -353,19 +367,18 @@ def query_process(args):
     query = {'geopolygon': query_poly, 'time': time}
     datasets = fc_product.query(dc, **query)
     grouped = fc_product.group(datasets, **query)
-    _LOG.debug("query %s done", query)
+    _LOG.debug("query %s done", query['time'])
     return grouped
 
 def iter_shapes(t_file, shapefile):
-    with fiona.open(shapefile) as allshapes:
-        start_f = iter(allshapes)
-        shape = next(start_f)
-        with open(t_file, 'r') as f:
-            for line in f:
-                shape_id = line
-                while int(shape_id) != int(shape['id']):
-                    shape = next(start_f)
-                yield shape
+    shapes = shape_list(shapefile)
+    shape = next(shapes)
+    with open(t_file, 'r') as f:
+        for line in f:
+            shape_id = line.rstrip()
+            while int(shape_id) != int(shape['id']):
+                shape = next(shapes)
+            yield shape
 
 def union_shapes(shape_list):
     query_poly = None
@@ -385,6 +398,32 @@ def iter_queries(fc_product, query_poly, start_date, end_date):
     for time in query_date:
         yield(fc_product, query_poly, time)
 
+def normalize_name(name_str, str_length):
+    replace_special_characters = ["/"]
+    delete_special_characters = ["\"", "\'"]
+    tmp = name_str
+    for sc in replace_special_characters:
+        if sc in name_str:
+            tmp = tmp.replace(sc, "_")
+    for sc in delete_special_characters:
+        if sc in name_str:
+            tmp = tmp.replace(sc, "")
+    tmp = tmp[:str_length] if (len(tmp) > str_length) else tmp
+    return tmp
+
+def generate_file_name(shape, output_name):
+    name_length = 127
+    if len(output_name) == 0:
+        file_name = shape['id']
+    else:
+        file_name = []
+        str_length = (name_length - len(output_name) + 1) // len(output_name)
+        for oe in output_name:
+            tmp = str(shape['properties'].get(oe, shape['id']))
+            tmp = normalize_name(tmp, str_length)
+            file_name.append(tmp)
+        file_name = '_'.join(file_name)
+    return file_name
 
 shapefile_path = click.argument('shapefile', type=str, default='/g/data/r78/rjd547/DES-QLD_Project/data/Wet_WGS84_P.shp')
 product_definition = click.option('--product-yaml', type=str, help='yaml file of virtual product recipe',
@@ -394,65 +433,96 @@ product_definition = click.option('--product-yaml', type=str, help='yaml file of
 def main():
     pass
 
+@main.command(name='wit-check', help='Check the sainity of the shape file')
+@shapefile_path
+def wit_check(shapefile):
+    check_pass = True
+    with fiona.open(shapefile, 'r') as s:
+        if '3577' not in s.crs_wkt:
+            _LOG.warning("%s not comply", s.crs_wkt)
+            check_pass = False
+    for shape in shape_list(shapefile):
+        if shape.get('geometry') is None:
+            _LOG.warning("shape %s geometry %s not comply", shape['id'], shape['geometry'])
+            check_pass = False
+            break
+    if check_pass:
+        _LOG.info("All checks pass")
+    else:
+        _LOG.info("Fix the shape file %s", shapefile)
+
+@main.command(name='wit-dump', help='Dump csv to database')
+@shapefile_path
+@click.option('--input-folder', type=str, help='Location to load the wit results', default='./results')
+@click.option('--input-name','-n', type=str, help='A property from shape file used to get the data file name, default feature_id',
+        multiple=True, default=None)
+@click.option('--feature',  type=int, help='An individual polygon to dump', default=None)
+
+def wit_dump(shapefile, input_folder, input_name, feature):
+    with fiona.open(shapefile) as allshapes:
+        crs = allshapes.crs_wkt
+    for shape in shape_list(shapefile):
+        if feature is not None:
+            if int(shape['id']) != feature:
+                continue
+        _, poly_id = query_store_polygons((shape, crs, shapefile))
+        _LOG.debug("dump result for %s", poly_id)
+        if poly_id == -1:
+            _LOG.info("result up-to-date for %s", poly_id)
+            continue
+        file_name = generate_file_name(shape, input_name)
+        with open('/'.join([input_folder, file_name+'.csv']), newline='') as f:
+            csv_reader = csv.reader(f, delimiter=',')
+            for row in csv_reader:
+                if row[0].upper() == 'TIME':
+                    continue
+                filter_store_result((poly_id, row[0], False, np.array(row[1:], dtype='float')))
+            filter_store_result((poly_id, row[0], True, np.array(row[1:], dtype='float')))
+
 @main.command(name='wit-plot', help='Plot png and dump csv from database')
 @shapefile_path
 @click.option('--output-location', type=str, help='Location to save the query results', default='./results')
 @click.option('--output-name','-n', type=str, help='A property from shape file used to populate file name, default feature_id',
         multiple=True, default=None)
 @click.option('--feature',  type=int, help='An individual polygon to plot', default=None)
+@click.option('--zip-file', '-z',  type=str, help='Zip the output files into the given file name', default=None)
 
-def wit_plot(shapefile, output_location, output_name, feature):
+def wit_plot(shapefile, output_location, output_name, feature, zip_file):
     if not path.exists(output_location):
         os.makedirs(output_location)
 
-    replace_special_characters = ["/"]
-    delete_special_characters = ["\"", "\'"]
-    name_length = 127
-
-    with fiona.open(shapefile) as allshapes:
-        start_f = iter(allshapes)
-        while True:
-            try:
-                shape = next(start_f)
-            except:
-                break
-            if feature is not None:
-                if int(shape['id']) != feature:
-                    continue
-
-            print("shape id", shape['id'])
-            poly_name, count = query_wit_data(shape)
-            print("data size", count.size)
-            if count.size == 0:
+    for shape in shape_list(shapefile):
+        if feature is not None:
+            if int(shape['id']) != feature:
                 continue
-            if len(output_name) == 0:
-                file_name = shape['id']
-                if poly_name == '__':
-                    poly_name = str(shape['id'])
-            else:
-                file_name = []
-                str_length = (name_length - len(output_name) + 1) // len(output_name)
-                for oe in output_name:
-                    tmp = str(shape['properties'].get(oe, shape['id']))
-                    for sc in replace_special_characters:
-                        if sc in tmp:
-                            tmp = tmp.replace(sc, "_")
-                    for sc in delete_special_characters:
-                        if sc in tmp:
-                            tmp = tmp.replace(sc, "")
-                    tmp = tmp[:str_length] if (len(tmp) > str_length) else tmp
-                    file_name.append(tmp)
-                file_name = '_'.join(file_name)
-                poly_name = file_name
-            print("shape name", poly_name)
-            pd.DataFrame(data=count, columns=['TIME', 'BS', 'NPV', 'PV', 'WET', 'WATER']).to_csv(
-                    '/'.join([output_location, file_name+'.csv']), index=False)
-            b_image = plot_to_png(count, poly_name)
-            with open('/'.join([output_location, file_name+'.png']), 'wb') as f:
-                f.write(b_image.read())
 
-            if feature is not None:
-                break
+        _LOG.debug("shape id %s", shape['id'])
+        poly_name, count = query_wit_data(shape)
+        _LOG.debug("data size %s", count.size)
+        if count.size == 0:
+            continue
+        file_name = generate_file_name(shape, output_name)
+        poly_name = file_name
+        _LOG.debug("shape name %s", poly_name)
+
+        tmp_csv_file = '/'.join([output_location, file_name+'.csv'])
+        tmp_png_file = '/'.join([output_location, file_name+'.png'])
+
+        b_image = plot_to_png(count, poly_name)
+        csv_buf = io.StringIO()
+        pd.DataFrame(data=count, columns=['TIME', 'BS', 'NPV', 'PV', 'WET', 'WATER']).to_csv(csv_buf, index=False)
+        csv_buf.seek(0)
+        if zip_file is None:
+            with open(tmp_csv_file, 'w') as f:
+                f.write(csv_buf.read())
+            with open(tmp_png_file, 'wb') as f:
+                f.write(b_image.read())
+        else:
+            with ZipFile('/'.join([output_location, zip_file+'.zip']), 'a') as o_zip:
+                o_zip.writestr(tmp_csv_file, csv_buf.read())
+                o_zip.writestr(tmp_png_file, b_image.read())
+        if feature is not None:
+            break
 
 @main.command(name='wit-query', help='Query datasets by path/row')
 @shapefile_path
@@ -511,7 +581,6 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, pr
 
         query_poly = query_poly[0]
         query_poly = Geometry(mapping(box(*query_poly.bounds)), CRS(crs))
-        _LOG.debug("query_poly %s", query_poly)
         query_list = iter_queries(fc_product, query_poly, start_date, end_date)
         with MPIPoolExecutor(max_workers=8) as executor:
             results = executor.map(query_process, query_list)
@@ -541,36 +610,35 @@ def match_pathrow(shapefile,  output_location):
 
     future_list = []
     total_poly = 0
-    with MPIPoolExecutor() as executor:
+    with MPIPoolExecutor(max_worker=8) as executor:
         for shape in shape_list(shapefile):
             future = executor.submit(intersect_with_landsat, shape)
             future_list.append(future)
 
-        for future in future_list:
-            pl_name, contain, intersect = future.result()
-            total_poly += 1
-            if contain != []:
-                key = contain[0]
-                with open(output_location + '/contain_' + key + '.txt', 'a') as f:
+    for future in future_list:
+        pl_name, contain, intersect = future.result()
+        total_poly += 1
+        if contain != []:
+            key = contain[0]
+            with open(output_location + '/contain_' + key + '.txt', 'a') as f:
+                f.write(pl_name+'\n')
+        elif intersect != []:
+            key = '_'.join(intersect)
+            with open(output_location + '/intersect_' + key + '.txt', 'a') as f:
                     f.write(pl_name+'\n')
-            elif intersect != []:
-                key = '_'.join(intersect)
-                with open(output_location + '/intersect_' + key + '.txt', 'a') as f:
-                        f.write(pl_name+'\n')
 
     _LOG.info("total poly %s", total_poly)
     return
 
 @main.command(name='wit-cal', help='Compute area percentage of polygons')
 @shapefile_path
-@click.option('--start-date',  type=str, help='Start date, default=1987-01-01', default='1987-01-01')
-@click.option('--end-date',  type=str, help='End date, default=2020-01-01', default='2020-01-01')
 @click.option('--time-chunk',  type=int, help='Time slices to load in one go', default=8)
 @click.option('--feature-list',  type=str, help='A file of features ID', default=None)
 @click.option('--datasets',  type=str, help='Pickled datasets', default=None)
 @click.option('--aggregate', type=bool, help='If the polygon requires aggregation over path/row', default=False)
+@click.option('--reset', type=bool, help='Reset the time to be 1987-01-01. Cautious: it will delete the results in database.', default=False)
 @product_definition
-def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets, aggregate, product_yaml):
+def wit_cal(shapefile, time_chunk, feature_list, datasets, aggregate, reset, product_yaml):
 
     if feature_list is None:
         _LOG.error("feature list can't be none")
@@ -601,7 +669,6 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
     _LOG.debug("gone over all the polygons in %s", datetime.now() - time_start_insert)
     for j in range(len(shape_vessel)):
         _LOG.debug("number of polygons %s in vessel %s", len(poly_vessel[j]), j)
-        _LOG.debug("polygons %s in vessel %s", poly_vessel[j], j)
 
     if poly_vessel[0] == []:
         _LOG.info("all done")
@@ -611,16 +678,18 @@ def wit_cal(shapefile, start_date, end_date, time_chunk, feature_list, datasets,
         grouped = pickle.load(f)
     _LOG.debug("grouped datasets %s", grouped)
 
-    for j in range(len(shape_vessel)):
-        if poly_vessel[j] == []:
-            continue
-        shape_value = shape_vessel[j]
-        poly_value = poly_vessel[j]
-        mask_array = generate_raster(shape_value, grouped.geobox)
-        all_polygons(fc_product, grouped, poly_value, mask_array, aggregate, time_chunk)
-        _LOG.info("done processeing %s th vessel", j)
+    mask_array = {}
+    future_list = []
+    with MPIPoolExecutor() as executor:
+        for key in shape_vessel.keys():
+            future = executor.submit(generate_raster, shape_vessel[key], grouped.geobox)
+            future_list.append(future)
+    for key, future in zip(shape_vessel.keys(), future_list):
+        mask_array[key] = future.result()
+    all_polygons(fc_product, grouped, poly_vessel, mask_array, aggregate, time_chunk, reset)
     _LOG.info("all done")
     sys.exit(0)
+
 
 if __name__ == '__main__':
     main()

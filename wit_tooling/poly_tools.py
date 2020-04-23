@@ -48,33 +48,6 @@ def poly_wkt(geometry, srid=3577):
     pl_wetland = convert_shape_to_polygon(geometry)
     return 'SRID=%s;' % (srid)+pl_wetland.to_wkt()
 
-def hash_polygon(geometry, area_leng):
-    bound = shape(geometry).bounds
-    m = hashlib.md5()
-    m.update(json.dumps(bound).encode('utf-8'))
-    m.update(json.dumps(area_leng).encode('utf-8'))
-    bound_hash = m.digest()
-    return bound_hash
-
-def hash_from_shape(shape):
-    property_keys = ['shape_area', 'shape_leng', 'area']
-    shape_property = 0
-    for key in property_keys:
-        for p_key in shape['properties'].keys():
-            if p_key.lower() == key:
-                shape_property = shape['properties'].get(p_key, 0)
-                break
-        if shape_property != 0:
-            break
-
-    shape_id = int(shape['id'])
-    area_leng = dict({p_key:shape_property})
-    print("area leng", area_leng)
-
-    poly_hash = hash_polygon(shape['geometry'], area_leng)
-    print("poly hash", poly_hash)
-    return poly_hash
-
 def query_wit_data(shape):
     dio = DIO.get()
     poly_hash = poly_wkt(shape['geometry']) 
@@ -82,6 +55,7 @@ def query_wit_data(shape):
     return poly_name, np.array(rows)
 
 def plot_to_png(count, polyName):
+    min_observe = 4
     pal = ['#030aa7',
             '#04d9ff', 
             '#3f9b0b',
@@ -120,23 +94,44 @@ def plot_to_png(count, polyName):
     ax = plt.gca()
     ax.xaxis.set_major_locator(years)
     ax.xaxis.set_major_formatter(yearsFmt)
-    #ax.yaxis.set_ticks(np.arange(0,110,10))
     ax.set_xlabel(f'The Fractional Cover algorithm developed by the Joint Remote'
     f' Sensing Research Program and \n the Water Observations from Space algorithm '
     f'developed by Geoscience Australia are used in the production of this data',style='italic')
-    LS5_8_gap_start = datetime(2011,11,1)
-    LS5_8_gap_end = datetime(2013,4,1)
 
-    # convert to matplotlib date representation
-    gap_start = mdates.date2num(LS5_8_gap_start)
-    gap_end = mdates.date2num(LS5_8_gap_end)
-    gap = gap_end - gap_start
+    gap_start = None 
+    gap_end = None 
 
-    # set up rectangle
-    slc_rectangle= Rectangle((gap_start,0), gap, 100,alpha = 0.5, facecolor='#ffffff',
+    def plot_patch(gap_start, gap_end):
+        tmp_start = mdates.date2num(gap_start.astype('object'))
+        tmp_end = mdates.date2num(gap_end.astype('object'))
+        gap = tmp_end - tmp_start
+        slc_rectangle= Rectangle((tmp_start,0), gap, 100,alpha = 0.5, facecolor='#ffffff',
                 edgecolor='#ffffff', hatch="////",linewidth=2)
-    ax.add_patch(slc_rectangle)
+        ax.add_patch(slc_rectangle)
 
+    ls7_gap_start = np.datetime64('2011-11-01')
+    ls7_gap_end =  np.datetime64('2013-04-01')
+
+    # mark observations < min_observe per year
+    # and landsat7 gap
+    for y in np.arange(time_min.astype('datetime64[Y]'), time_max.astype('datetime64[Y]')+1):
+        if (np.count_nonzero((count[:, 0].astype('datetime64[s]') >= y) &
+                (count[:, 0].astype('datetime64[s]') < y + 1)) < min_observe):
+            if gap_start is None:
+                gap_start = y
+                gap_end = y+1
+            elif y > gap_end:
+                plot_patch(gap_start, gap_end)
+                gap_start = y
+            gap_end = max(gap_end, y+1)
+        
+        if y == ls7_gap_start.astype('datetime64[Y]'):
+            if y > gap_end:
+                plot_patch(gap_start, gap_end)
+                gap_start = ls_gap_start
+            gap_end = ls7_gap_end 
+    plot_patch(gap_start, gap_end)
+            
     # this section wraps text for polygon names that are too long
     polyName=polyName.replace("'","\\'")
     title=ax.set_title("\n".join(wrap(f'Percentage of area dominated by WOfS, Wetness, Fractional Cover for {polyName}')))
