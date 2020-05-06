@@ -11,7 +11,7 @@ from bokeh.layouts import layout, column, row, WidgetBox, gridplot
 from bokeh.models import CheckboxGroup, Select,  CategoricalColorMapper, ColumnDataSource,HoverTool, Label, SingleIntervalTicker, Slider, DatetimeTickFormatter, YearsTicker, Legend, TapTool, CustomJS, LegendItem, field
 from bokeh.palettes import viridis, brewer
 from bokeh.plotting import figure
-from bokeh.transform import factor_cmap, LinearColorMapper 
+from bokeh.transform import factor_cmap, LinearColorMapper
 from bokeh.events import DoubleTap
 
 dio = DIO.get()
@@ -37,12 +37,12 @@ def metric_by_catchment(catchment_name):
             start_time = datetime.now()
             source = get_year_metrics_with_type_area(poly_list)
             print("end query in", datetime.now()-start_time)
-            source['catchment'] = catchment_name 
+            source['catchment'] = catchment_name
         else:
             start_time = datetime.now()
             tmp = get_year_metrics_with_type_area(poly_list)
             print("end query in", datetime.now()-start_time)
-            tmp['catchment'] = catchment_name 
+            tmp['catchment'] = catchment_name
             source = pd.concat([source, tmp], ignore_index=True)
     return source
 
@@ -52,7 +52,7 @@ data[data.columns[2:11]] = data[data.columns[2:11]] * 100
 data.area = data.area/100 * np.pi
 source = ColumnDataSource(data=data.loc[data.year==1987])
 
-type_list = data.type.unique() 
+type_list = data.type.unique()
 color_map = viridis(len(type_list))
 type_list = tuple(list(reversed(type_list)))
 
@@ -99,11 +99,11 @@ def select_update(attrname, old, new):
     for i in checkbox_group.active:
         types.append(type_list[i])
 
-    cc.glyph.x = x_axis 
-    plot.xaxis.axis_label = x_axis 
-    cc.glyph.y = y_axis 
-    plot.yaxis.axis_label = y_axis 
-    label.text = str(year) 
+    cc.glyph.x = x_axis
+    plot.xaxis.axis_label = x_axis
+    cc.glyph.y = y_axis
+    plot.yaxis.axis_label = y_axis
+    label.text = str(year)
 
     legend_key = l_select.value
     if legend_key == "ANAE_type":
@@ -130,7 +130,7 @@ x_select = Select(title="X-axis", value='water_max', options=list(data.columns[2
 x_select.on_change('value', select_update)
 y_select = Select(title="Y-axis", value='pv_max', options=list(data.columns[2:11]), height=50, width=100, sizing_mode="fixed")
 y_select.on_change('value', select_update)
-l_select = Select(title="Legend", value='ANAE_type', options=['ANAE_type', 'water_max', 'pv_max'], height=50, width=100, 
+l_select = Select(title="Legend", value='ANAE_type', options=['ANAE_type', 'water_max', 'pv_max'], height=50, width=100,
         sizing_mode="fixed")
 l_select.on_change('value', select_update)
 c_select = Select(title="Catchment", value=catchments[1], options=list(catchments.values()), height=50, width=100, sizing_mode="fixed")
