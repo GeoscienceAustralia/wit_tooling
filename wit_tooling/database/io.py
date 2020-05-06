@@ -334,10 +334,10 @@ class DIO(object):
         fields = conn.cursor.fetchall()
         self.polygons.dbFieldNames = [str(field[0]) for field in fields]
 
-        if self.alltime_metrics.tableName not in table_names:
+        if self.alltime_metrics.tableName not in matview_names:
             conn.cursor.execute(alltime_count_view)
 
-        if self.first_observe.tableName not in table_names:
+        if self.first_observe.tableName not in matview_names:
             conn.cursor.execute(first_observe_view)
 
         if self.year_metrics.tableName not in matview_names:
@@ -356,18 +356,17 @@ class DIO(object):
             this_size = 0
             while last_size != this_size:
                 last_size = this_size
-                conn.cursor.execute(more_event_metrics)
+                conn.cursor.execute(update_event_metrics)
                 conn.dbConn.commit()
                 conn.cursor.execute("SELECT count(poly_id) from %s" % (self.event_metrics_time.tableName))
                 this_size = conn.cursor.fetchall()[0][0]
-            conn.cursor.execute(last_event_metrics)
 
         if self.incomplete_event.tableName not in table_names:
             conn.cursor.execute(incomplete_event_table)
-            conn.cursor.execute("alter table incomplete_event add column event_id bigserial")
             conn.cursor.execute("alter table incomplete_event add primary key (event_id)")
             conn.cursor.execute("alter table incomplete_event add constraint incomplete_event_fk foreign" \
                     "key (poly_id) references polygons (poly_id)")
+            conn.cursor.execute(update_incomplete_event)
             conn.dbConn.commit()
 
         if self.event_metrics.tableName not in matview_names:
@@ -801,6 +800,13 @@ class DIO(object):
         sql_params = ((geometry,) * 3)
         with ConnectionFactory.get() as conn:
             row = self.get_matching_rows(conn, query, sql_params, None)
+        return row
+
+    def get_alltime_metrics_by_geom(self, geometry):
+        poly_id, poly_name, state = self.get_id_by_geom(self.poly_tablename, geometry)
+        if poly_id == 0:
+            return []
+        row = self.get_alltime_metrics(poly_id)
         return row
 
     def get_alltime_metrics(self, poly_list):

@@ -50,14 +50,21 @@ def poly_wkt(geometry, srid=3577):
 
 def query_wit_data(shape):
     dio = DIO.get()
-    poly_hash = poly_wkt(shape['geometry']) 
+    poly_hash = poly_wkt(shape['geometry'])
     poly_name, rows = dio.get_data_by_geom(poly_hash)
     return poly_name, np.array(rows)
+
+def query_wit_metrics(shape, mtype='alltime'):
+    dio = DIO.get()
+    poly_hash = poly_wkt(shape['geometry'])
+    if mtype == 'alltime':
+        rows = dio.get_alltime_metrics_by_geom(poly_hash)
+    return rows
 
 def plot_to_png(count, polyName):
     min_observe = 4
     pal = ['#030aa7',
-            '#04d9ff', 
+            '#04d9ff',
             '#3f9b0b',
             '#e6daa6',
             '#60460f']
@@ -69,10 +76,10 @@ def plot_to_png(count, polyName):
             ]
 
     fig = plt.figure(figsize = (22,6))
-    plt.stackplot(count[:, 0].astype('datetime64[s]'), 
-            count[:, 5].astype('float32') * 100, 
-            count[:, 4].astype('float32') * 100, 
-            count[:, 3].astype('float32') * 100, 
+    plt.stackplot(count[:, 0].astype('datetime64[s]'),
+            count[:, 5].astype('float32') * 100,
+            count[:, 4].astype('float32') * 100,
+            count[:, 3].astype('float32') * 100,
             count[:, 2].astype('float32') * 100,
             count[:, 1].astype('float32') * 100,
             colors=pal, alpha = 0.6)
@@ -98,8 +105,8 @@ def plot_to_png(count, polyName):
     f' Sensing Research Program and \n the Water Observations from Space algorithm '
     f'developed by Geoscience Australia are used in the production of this data',style='italic')
 
-    gap_start = None 
-    gap_end = None 
+    gap_start = None
+    gap_end = None
 
     def plot_patch(gap_start, gap_end):
         tmp_start = mdates.date2num(gap_start.astype('object'))
@@ -124,20 +131,23 @@ def plot_to_png(count, polyName):
                 plot_patch(gap_start, gap_end)
                 gap_start = y
             gap_end = max(gap_end, y+1)
-        
+
         if y == ls7_gap_start.astype('datetime64[Y]'):
-            if y > gap_end:
-                plot_patch(gap_start, gap_end)
-                gap_start = ls_gap_start
-            gap_end = ls7_gap_end 
+            if gap_end is not None:
+                if y > gap_end:
+                    plot_patch(gap_start, gap_end)
+                    gap_start = ls7_gap_start
+            else:
+                gap_start = ls7_gap_start
+            gap_end = ls7_gap_end
     plot_patch(gap_start, gap_end)
-            
+
     # this section wraps text for polygon names that are too long
     polyName=polyName.replace("'","\\'")
     title=ax.set_title("\n".join(wrap(f'Percentage of area dominated by WOfS, Wetness, Fractional Cover for {polyName}')))
     fig.tight_layout()
     title.set_y(1.05)
-    
+
     bytes_image = io.BytesIO()
     plt.savefig(bytes_image, format='png')
     bytes_image.seek(0)
