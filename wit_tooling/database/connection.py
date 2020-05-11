@@ -408,7 +408,10 @@ class PooledConnectionPolicy(object):
         """
         self._logger.debug("Releasing connection")
 
-        dbConn.commit()
+        try:
+            dbConn.commit()
+        except:
+            pass
 
         # Close the cursor
         cursor.close()

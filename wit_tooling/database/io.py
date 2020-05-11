@@ -754,6 +754,14 @@ class DIO(object):
         row = self.get_data_by_poly_id(poly_id)
         return poly_name, row
 
+    def get_catchment_list(self, vague_string):
+        query = "SELECT catchment_id, catchment_name FROM %s WHERE shapefile ~ '.*%s.*'" % (self.catchment.tableName, vague_string)
+        with ConnectionFactory.get() as conn:
+            row = self.get_matching_rows(conn, query, None, None)
+            if len(row) == 0:
+                return ''
+            return row
+
     def get_name_by_id(self, table_name, poly_id):
         if table_name == self.catchment.tableName:
             query, sql_params, max_rows = self.construct_query(self.catchment,
@@ -767,10 +775,10 @@ class DIO(object):
                 return ''
             return row
 
-    def get_polys_by_catchment_id(self, catchment_id, maxrows=None):
+    def get_polys_by_catchment_id(self, catchment_id, vague_string, maxrows=None):
         query = "SELECT poly_id from %s as p, %s as c " \
                 " WHERE ST_Contains(c.geometry, p.geometry) AND c.catchment_id=%%s " \
-                " ORDER BY ST_Area(p.geometry) DESC" % (self.poly_tablename, self.catchment.tableName,)
+                " AND p.shapefile ~ '.*%s.*' ORDER BY ST_Area(p.geometry) DESC" % (self.poly_tablename, self.catchment.tableName, vague_string)
         if maxrows is not None:
             query += " LIMIT %s" % (maxrows,)
         sql_params = (catchment_id,)
@@ -842,7 +850,7 @@ class DIO(object):
         if not isinstance(poly_list, self._SEQUENCE_TYPES):
             poly_list = [poly_list]
 
-        query = "SELECT a.*, b.poly_name, ST_Area(b.geometry)/10000 as area, c.properties::json->%%s as type "\
+        query = "SELECT a.*, c.properties::json->'ORIG_FID', ST_Area(b.geometry)/10000 as area, c.properties::json->%%s as type "\
                 " FROM %s as a, %s as b, %s as c WHERE a.poly_id=b.poly_id AND a.poly_id=c.poly_id AND a.poly_id IN %%s "\
                 " ORDER by a.poly_id ASC, a.year ASC"\
                 %(self.year_metrics.tableName, self.polygons.tableName, "poly_properties")
@@ -882,10 +890,10 @@ class DIO(object):
 
 
         query_view_s2 = "CREATE OR REPLACE TEMP VIEW decade_%s_%s_s2 AS "\
-                " (SELECT a.poly_id, poly_name, wet_years, "\
+                " (SELECT a.poly_id, wet_years, "\
                 " EXTRACT(epoch FROM SUM(duration))/86400/365/%%s AS percent, AVG(area) AS area FROM decade_%s_%s_s1 AS a, "\
-                " polygons AS b, decade_%s_%s_y as c WHERE a.poly_id=b.poly_id AND a.poly_id=c.poly_id "\
-                " GROUP BY a.poly_id, b.poly_name, c.wet_years ORDER BY area DESC)"\
+                " poly_properties AS b, decade_%s_%s_y as c WHERE a.poly_id=b.poly_id AND a.poly_id=c.poly_id "\
+                " GROUP BY a.poly_id, c.wet_years ORDER BY area DESC)"\
                 % ((str(start_year), str(end_year)) * 3)
 
         sql_params_s2 = (year_interval, )
@@ -909,12 +917,13 @@ class DIO(object):
                 " decade_%s_%s_o GROUP BY poly_id) AS a WHERE NOT EXISTS (SELECT * FROM decade_%s_%s_r as b WHERE a.poly_id = b.poly_id))"\
                 % ((str(start_year), str(end_year)) * 5)
 
-        data_query = "SELECT poly_id, poly_name, wet_years, percent, area "\
-                " FROM decade_%s_%s_s2 WHERE area>=%%s "\
-                " AND poly_id IN %%s LIMIT %%s" % (str(start_year), str(end_year))
+        data_query = "SELECT a.poly_id, properties::json->'ORIG_FID' as poly_name, wet_years, percent, area "\
+                " FROM decade_%s_%s_s2 as a, poly_properties as b WHERE a.area>=%%s "\
+                " AND a.poly_id IN %%s AND a.poly_id = b.poly_id LIMIT %%s" % (str(start_year), str(end_year))
         data_params = (min_area, tuple(poly_list), max_rows)
 
         with ConnectionFactory.get() as conn:
+            conn.cursor.execute("SET work_mem='16GB'")
             conn.cursor.execute(query_view_s1, sql_params_s1)
             conn.cursor.execute(query_view_c1, sql_params_c1)
             conn.cursor.execute(query_view_c2, sql_params_c2)

@@ -18,9 +18,9 @@ def get_pv_year_metrics(poly_list):
     rows = dio.get_pv_year_metrics(poly_list)
     return pd.DataFrame(rows, columns=['poly_id', 'year', 'min', 'max', 'mean'])
 
-def get_year_metrics_with_type_area(poly_list):
+def get_year_metrics_with_type_area(poly_list, wtype):
     dio = DIO.get()
-    rows = dio.get_year_metrics_with_type_area(poly_list)
+    rows = dio.get_year_metrics_with_type_area(poly_list, wtype)
     return pd.DataFrame(rows, columns=['poly_id', 'year', 'wet_min', 'wet_max', 'wet_mean',
                                         'water_min', 'water_max', 'water_mean',
                                         'pv_min', 'pv_max', 'pv_mean', 'poly_name', 'area', 'type'])
