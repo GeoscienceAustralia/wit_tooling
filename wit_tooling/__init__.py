@@ -1,4 +1,4 @@
-from .poly_tools import convert_shape_to_polygon, poly_wkt, query_wit_data, plot_to_png, query_wit_metrics
+from .poly_tools import convert_shape_to_polygon, poly_wkt, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster
 from .database.io import DIO
 import pandas as pd
 

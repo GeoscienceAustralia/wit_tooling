@@ -1,4 +1,6 @@
 from shapely.geometry import Polygon, MultiPolygon, shape
+from rasterio import features
+from rasterio.warp import calculate_default_transform
 import hashlib
 import json
 import numpy as np
@@ -10,6 +12,7 @@ from matplotlib.patches import Rectangle
 from textwrap import wrap
 from datetime import datetime
 from pandas.plotting import register_matplotlib_converters
+from datacube.virtual.transformations import MakeMask, ApplyMask
 from .database.io import DIO
 
 register_matplotlib_converters()
@@ -60,6 +63,42 @@ def query_wit_metrics(shape, mtype='alltime'):
     if mtype == 'alltime':
         rows = dio.get_alltime_metrics_by_geom(poly_hash)
     return rows
+
+def load_timeslice(fc_product, to_split, mask_by_wofs=True):
+    results = fc_product.fetch(to_split)
+    #results = fc_product.fetch(to_split,  dask_chunks={'time':1, 'y':2000, 'x':2000})
+    results = ApplyMask('pixelquality', apply_to=['BS', 'PV', 'NPV', 'TCW']).compute(results)
+    water_mask = water_value = results.water.to_dataset()
+    flags = {'cloud': False,
+            'cloud_shadow': False,
+            'noncontiguous': False,
+            'water_observed': True
+            }
+
+    water_value = MakeMask('water', flags).compute(water_value)
+
+    if mask_by_wofs:
+        flags = {'cloud': False,
+                'cloud_shadow': False,
+                'noncontiguous': False,
+                'water_observed': False
+                }
+        water_mask = MakeMask('water', flags).compute(water_mask)
+    else:
+        water_mask.water.data = ~water_value.water.data
+
+    results = results.drop('water').merge(water_mask)
+    results = ApplyMask('water', apply_to=['BS', 'PV', 'NPV', 'TCW']).compute(results)
+    results = results.merge(water_value)
+    return results
+
+def generate_raster(shapes, geobox):
+    yt, xt = geobox.shape
+    transform, width, height = calculate_default_transform(
+        geobox.crs, geobox.crs.crs_str, yt, xt, *geobox.extent.boundingbox)
+    target_ds = features.rasterize(shapes,
+        (yt, xt), fill=-1, transform=transform, all_touched=True)
+    return target_ds
 
 def plot_to_png(count, polyName):
     min_observe = 4
