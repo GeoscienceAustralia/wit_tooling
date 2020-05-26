@@ -5,19 +5,19 @@ juxtapose:
         source_filter:
           product: ls8_level1_scene
           gqa_iterative_mean_xy: [0, 1]
-        dataset_predicate: datacube_stats.main.ls8_on
+        dataset_predicate: wit_tooling.ls8_on
       - product: ls7_fc_albers
         measurements: [BS, PV, NPV]
         source_filter:
           product: ls7_level1_scene
           gqa_iterative_mean_xy: [0, 1]
-        dataset_predicate: datacube_stats.main.ls7_on
+        dataset_predicate: wit_tooling.ls7_on
       - product: ls5_fc_albers
         measurements: [BS, PV, NPV]
         source_filter:
           product: ls5_level1_scene
           gqa_iterative_mean_xy: [0, 1]
-        dataset_predicate: datacube_stats.main.ls5_on_1ym
+        dataset_predicate: wit_tooling.ls5_on_1ym
   - collate:
       - transform: make_mask
         input:
@@ -78,19 +78,19 @@ juxtapose:
           source_filter:
             product: ls8_level1_scene
             gqa_iterative_mean_xy: [0, 1]
-          dataset_predicate: datacube_stats.main.ls8_on
+          dataset_predicate: wit_tooling.ls8_on
         - product: ls7_nbart_albers
           measurements: [blue, green, red, nir, swir1, swir2]
           source_filter:
             product: ls7_level1_scene
             gqa_iterative_mean_xy: [0, 1]
-          dataset_predicate: datacube_stats.main.ls7_on
+          dataset_predicate: wit_tooling.ls7_on
         - product: ls5_nbart_albers
           measurements: [blue, green, red, nir, swir1, swir2]
           source_filter:
             product: ls5_level1_scene
             gqa_iterative_mean_xy: [0, 1]
-          dataset_predicate: datacube_stats.main.ls5_on_1ym
+          dataset_predicate: wit_tooling.ls5_on_1ym
   - product: wofs_albers
     measurements: [water]
     fuse_func: digitalearthau.utils.wofs_fuser

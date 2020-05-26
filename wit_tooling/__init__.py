@@ -1,6 +1,25 @@
 from .poly_tools import convert_shape_to_polygon, poly_wkt, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster
 from .database.io import DIO
 import pandas as pd
+from datetime import datetime
+
+def ls8_on(dataset):
+    LS8_START_DATE = datetime(2013, 1, 1)
+    return dataset.center_time >= LS8_START_DATE
+
+def ls7_on(dataset):
+    LS7_STOP_DATE = datetime(2003, 5, 31)
+    LS7_STOP_AGAIN = datetime(2013, 5, 31)
+    LS7_START_AGAIN = datetime(2010, 1, 1)
+    return dataset.center_time <= LS7_STOP_DATE or (dataset.center_time >= LS7_START_AGAIN
+                                                    and dataset.center_time <= LS7_STOP_AGAIN)
+
+def ls5_on_1ym(dataset):
+    LS5_START_AGAIN = datetime(2003, 1, 1)
+    LS5_STOP_DATE = datetime(1999, 12, 31)
+    LS5_STOP_AGAIN = datetime(2011, 12, 31)
+    return dataset.center_time <= LS5_STOP_DATE or (dataset.center_time >= LS5_START_AGAIN
+                                                    and dataset.center_time <= LS5_STOP_AGAIN)
 
 def get_alltime_metrics(poly_list):
     dio = DIO.get()
