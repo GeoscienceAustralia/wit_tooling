@@ -70,7 +70,7 @@ juxtapose:
           swir1_saturated: False
           swir2_saturated: False
         mask_measurement_name: pixelquality
-  - transform: datacube_stats.external.TCIndex
+  - transform: wit_tooling.external_stats.TCIndex
     input:
       collate:
         - product: ls8_nbart_albers
