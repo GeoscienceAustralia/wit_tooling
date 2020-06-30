@@ -2,13 +2,11 @@ from datacube import Datacube
 from datacube.virtual.impl import VirtualDatasetBox
 from datacube.virtual import construct
 from datacube.utils.geometry import CRS, Geometry
+from datacube.utils.geometry.gbox import GeoboxTiles
 from datacube_stats.utils.dates import date_sequence
-from datacube.virtual.transformations import MakeMask, ApplyMask
 
 from shapely.geometry import Polygon, MultiPolygon, mapping, box, shape
 from pyproj import Proj, transform
-from rasterio import features
-from rasterio.warp import calculate_default_transform
 import fiona
 import fiona.crs
 import yaml
@@ -34,9 +32,7 @@ from mpi4py import MPI
 from mpi4py.futures import MPIPoolExecutor
 from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
-from wit_tooling import poly_wkt, convert_shape_to_polygon
-from wit_tooling import query_wit_data, plot_to_png
-
+from wit_tooling import poly_wkt, convert_shape_to_polygon, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster
 
 _LOG = logging.getLogger('wit_tool')
 stdout_hdlr = logging.StreamHandler(sys.stdout)
@@ -97,14 +93,6 @@ def query_store_polygons(args):
     else:
         return (None, -1)
 
-def generate_raster(shapes, geobox):
-    yt, xt = geobox.shape
-    transform, width, height = calculate_default_transform(
-        geobox.crs, geobox.crs.crs_str, yt, xt, *geobox.extent.boundingbox)
-    target_ds = features.rasterize(shapes,
-        (yt, xt), fill=-1, transform=transform, all_touched=True)
-    return target_ds
-
 def aggregate_data(fc_results, water_results):
     j = 1
     tmp = {}
@@ -126,30 +114,51 @@ def aggregate_data(fc_results, water_results):
 
     return tmp, tmp_water
 
-def aggregate_over_timeslice(fc_product, grouped, i_start, ready, poly_vessel, mask_array_dict):
+def aggregate_over_timeslice(fc_product, grouped, i_start, aggregate, ready, poly_vessel, mask_array_dict):
     i_end = i_start + 1
     time = grouped.box.time.data[i_start]
     while i_end < grouped.box.time.size and (np.abs(time - grouped.box.time.data[i_end]).astype('timedelta64[D]')
-                                                 < np.timedelta64(15, 'D')):
+                                                 < np.timedelta64(aggregate, 'D')):
         i_end += 1
 
     future_list = []
+    future_time_list = []
     loaded = None
+    merged = None
+    max_geobox_size = 16500
     _LOG.debug("aggregate over %s", (time, grouped.box.time.data[i_end-1]))
+    if sum(grouped.geobox.shape) > max_geobox_size * 2:
+        split_shape = (max_geobox_size, max_geobox_size)
+    else:
+        split_shape = grouped.geobox.shape
+    geobox_array = GeoboxTiles(grouped.geobox, split_shape)
+    _LOG.debug("geobox_array shape %s", geobox_array.shape)
+
     with MPIPoolExecutor() as executor:
         for i in range(i_start, i_end):
-            to_split = VirtualDatasetBox(grouped.box.sel(time=grouped.box.time.data[i:i+1]), grouped.geobox,
-                grouped.load_natively, grouped.product_definitions, grouped.geopolygon)
-            future = executor.submit(load_timeslice, fc_product, to_split)
-            future_list.append(future)
+            for j in range(geobox_array.shape[0]):
+                for k in range(geobox_array.shape[1]):
+                    to_split = VirtualDatasetBox(grouped.box.sel(time=grouped.box.time.data[i:i+1]), geobox_array[j, k],
+                        grouped.load_natively, grouped.product_definitions, grouped.geopolygon)
+                    future = executor.submit(load_timeslice, fc_product, to_split)
+                    future_list.append(future)
+            future_time_list.append(future_list)
+            future_list = []
 
-    for future in future_list:
+    for future_list in future_time_list:
+        for future in future_list:
+            if merged is None:
+                merged = future.result()
+            else:
+                merged = xr.merge([merged, future.result()])
+        _LOG.debug("finish loading time slice %s", merged.time.data[0])
         if loaded is None:
-            loaded = future.result()
+            loaded = merged
         else:
-            loaded = xr.concat([loaded, future.result()], dim='time')
+            loaded = xr.concat([loaded, merged], dim='time')
             fc_data, water_data = aggregate_data(loaded.drop('water'), loaded.water)
             loaded = xr.merge([fc_data, water_data.to_dataset()]).expand_dims('time')
+        merged = None
     nodata = []
     for var in loaded.data_vars:
         nodata.append(loaded[var].attrs.get('nodata', 0))
@@ -183,39 +192,7 @@ def get_polyName(feature):
     polyName = f'{ID}_{CATCHMENT}_{HAB}'
     return(polyName)
 
-def load_timeslice(fc_product, to_split, mask_by_wofs=True):
-    load_start = datetime.now()
-    results = fc_product.fetch(to_split)
-    #results = fc_product.fetch(to_split,  dask_chunks={'time':1, 'y':2000, 'x':2000})
-    results = ApplyMask('pixelquality', apply_to=['BS', 'PV', 'NPV', 'TCW']).compute(results)
-    water_mask = water_value = results.water.to_dataset()
-    flags = {'cloud': False,
-            'cloud_shadow': False,
-            'noncontiguous': False,
-            'water_observed': True
-            }
-
-    water_value = MakeMask('water', flags).compute(water_value)
-
-    if mask_by_wofs:
-        flags = {'cloud': False,
-                'cloud_shadow': False,
-                'noncontiguous': False,
-                'water_observed': False
-                }
-        water_mask = MakeMask('water', flags).compute(water_mask)
-    else:
-        water_mask.water.data = ~water_value.water.data
-
-    results = results.drop('water').merge(water_mask)
-    results = ApplyMask('water', apply_to=['BS', 'PV', 'NPV', 'TCW']).compute(results)
-    results = results.merge(water_value)
-    _LOG.debug("load end %s", datetime.now() - load_start)
-    _LOG.debug("load time slice %s", results.time.data)
-    return results
-
 def cal_timeslice(fc_product, to_split, mask_array_dict, poly_vessel, ready, nthreads):
-
     results = load_timeslice(fc_product, to_split)
     nodata = []
     for var in results.data_vars:
@@ -251,11 +228,12 @@ def all_polygons(fc_product, grouped, poly_vessel, mask_array_dict, aggregate, t
         fid_list += value
     time = db_last_update_time(dio, fid_list, reset)
     _LOG.debug("time from db %s", time)
+    _LOG.debug("aggregate over %s", np.timedelta64(aggregate, 'D'))
     while i < grouped.box.time.size:
         if time >= grouped.box.time.data[i]:
             i += 1
-        elif aggregate and (np.abs(time - grouped.box.time.data[i]).astype('timedelta64[D]')
-                                                 < np.timedelta64(15, 'D')):
+        elif aggregate > 0 and (np.abs(time - grouped.box.time.data[i]).astype('timedelta64[D]')
+                                                 < np.timedelta64(aggregate, 'D')):
             i += 1
         else:
             break
@@ -263,9 +241,9 @@ def all_polygons(fc_product, grouped, poly_vessel, mask_array_dict, aggregate, t
     nthreads = int(os.environ.get('OMP_NUM_THREADS', 8))//min(8, time_chunk)
     nthreads = max(nthreads, 1)
     while i < grouped.box.time.size:
-        if aggregate:
+        if aggregate > 0:
         # aggregate over time
-            i = aggregate_over_timeslice(fc_product, grouped, i, ready, poly_vessel, mask_array_dict)
+            i = aggregate_over_timeslice(fc_product, grouped, i, aggregate, ready, poly_vessel, mask_array_dict)
             continue
 
         future_list = []
@@ -433,6 +411,31 @@ product_definition = click.option('--product-yaml', type=str, help='yaml file of
 def main():
     pass
 
+@main.command(name='wit-output-metrics', help='Check the sainity of the shape file')
+@shapefile_path
+@click.option('--output', type=str, help='New shape file to save metrics', default='tmp.shp')
+def wit_output_metrics(shapefile, output):
+    metrics_properties = {'PV_TPC': 'float:5.3', 'Water_TPC': 'float:5.3', 'Wet_TPC': 'float:5.3',
+            'PV_FOT': 'str:32', 'Water_FOT': 'str:32', 'Wet_FOT': 'str:32'}
+    with fiona.open(shapefile, 'r') as s:
+        crs = s.crs
+        driver = s.driver
+        schema = s.schema
+    schema['properties'].update(metrics_properties)
+    with fiona.open(output, 'w', crs=crs, driver=driver, schema=schema) as d:
+        for shape in shape_list(shapefile):
+            metrics = query_wit_metrics(shape)
+            if metrics == []:
+                continue
+            metrics = list(metrics[0])
+            for i in range(4, 7):
+                metrics[i] = metrics[i].isoformat()
+            properties = shape['properties']
+            for key, val in zip(metrics_properties.keys(), metrics[1:]):
+                properties.update({key: val})
+            d.write({'geometry': shape['geometry'], 'properties': properties})
+            break
+
 @main.command(name='wit-check', help='Check the sainity of the shape file')
 @shapefile_path
 def wit_check(shapefile):
@@ -528,7 +531,7 @@ def wit_plot(shapefile, output_location, output_name, feature, zip_file):
 @shapefile_path
 @click.option('--input-folder', type=str, default='./')
 @click.option('--start-date',  type=str, help='Start date, default=1987-01-01', default='1987-01-01')
-@click.option('--end-date',  type=str, help='End date, default=2020-01-01', default='2020-01-01')
+@click.option('--end-date',  type=str, help='End date, default=2020-01-01', default='2021-01-01')
 @click.option('--output-location',  type=str, help='Location to save the query results', default='./query_results')
 @product_definition
 
@@ -635,7 +638,7 @@ def match_pathrow(shapefile,  output_location):
 @click.option('--time-chunk',  type=int, help='Time slices to load in one go', default=8)
 @click.option('--feature-list',  type=str, help='A file of features ID', default=None)
 @click.option('--datasets',  type=str, help='Pickled datasets', default=None)
-@click.option('--aggregate', type=bool, help='If the polygon requires aggregation over path/row', default=False)
+@click.option('--aggregate', type=int, help='If the polygon requires aggregation over path/row', default=0)
 @click.option('--reset', type=bool, help='Reset the time to be 1987-01-01. Cautious: it will delete the results in database.', default=False)
 @product_definition
 def wit_cal(shapefile, time_chunk, feature_list, datasets, aggregate, reset, product_yaml):

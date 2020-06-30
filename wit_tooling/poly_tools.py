@@ -11,11 +11,16 @@ import matplotlib.patches as mpatches
 from matplotlib.patches import Rectangle
 from textwrap import wrap
 from datetime import datetime
+import fiona
 from pandas.plotting import register_matplotlib_converters
 from datacube.virtual.transformations import MakeMask, ApplyMask
 from .database.io import DIO
 
 register_matplotlib_converters()
+def shape_list(shapefile):
+    with fiona.open(shapefile) as allshapes:
+        for shape in allshapes:
+            yield(shape)
 
 def convert_shape_to_polygon(geometry):
     if geometry['type'] == 'MultiPolygon':
