@@ -15,6 +15,7 @@ Version info
   
 2.1:
 ----
+- Deal with large polygons crossing multiple path/rows
 - Compute overlapping polygons correctly
 - Popularize the names and titles of output csv and png file with the selected propoties from shape file
 - Mark not enough observations (less than 4 per year) in the plots
@@ -39,32 +40,6 @@ Other auxilliary data/scripts/shapefiles...
 Installation:
 -----------
 - OpenMPI 4.0 can be manually installed or on NCI by `module load openmpi/4.0.1`
-
-- Install datacube-stats/refactor
-```
-cd $yourworkfolder
-git clone git@github.com:opendatacube/datacube-stats.git
-git checkout refactor
-cd datacube-stats
-pip install --user -e .
-```
-Or if one uses the env offered by `module load dea`, a hard-set of `PYTHONPATH` is needed.
-DONOT do 
-```
-pip install --user -e .
-```
-instead DO
-```
-export PYTHONPATH=$yourworkfolder/datacube-stats:$PYTHONPATH
-```
-
-Check `datacube-stats` is installed correctly, the version should be as shown below
-```
-In [1]: import datacube_stats                                                                                                                         
-
-In [2]: datacube_stats.__version__                                                                                                                    
-Out[2]: '2.0beta'
-```
 
 - Install wit_tooling
 ```
@@ -140,7 +115,7 @@ When a polygon has a large area such that no single path/row would intersect wit
 [ea6141@vdi-n24 wlinsight]$ cat anae/done/intersect_16_17_18_739_740_741.txt 
 417688
 ```
-which means polygon feature `417688` in `$shapefile` intersects with path/row `16, 17, 17, 749, 740 and 741`. In such case, an aggregation over time slice is required in `wit-cal` by setting `--aggregate True`.
+which means polygon feature `417688` in `$shapefile` intersects with path/row `16, 17, 17, 749, 740 and 741`. In such case, an aggregation over time slice is required in `wit-cal` by setting `--aggregate 15`.
 
 
 - Query the datacube database with results from the last step. Reason: See `Firstly` in Section `Why`.
@@ -175,16 +150,17 @@ This step generates the results and saves them into database. A computational no
 
 `$datasets` is a `pkl` file in folder `$out` from the last step, which contains `datasets` results from query;
 
-`$aggregate = True/False` where `True` means no single path/row contains the polygon(s) so that the aggregation over time is required, `False` means no aggregating is needed. Note, this can be told from the file name of `$feature`
+`$aggregate` is a nonnegative integer, where `$aggregate > 0` means no single path/row contains the polygon(s) so that the aggregation over time is required and the number of days is defined by the value of `$int`, e.g., if a polygon croseses only two path/rows, possibly`$aggregate = 15`;
+`$aggregate = 0` means no aggregating is needed. Note, this can be told from the file name of `$feature`
 
 For details of how the aggregation works, refer to the WIT documentation #fixme add link
 
 Example
 
-`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/sadew/new/contain_22.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/sadew/query/22.pkl --aggregate False --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/sadew/new/contain_22.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/sadew/query/22.pkl --aggregate 0 --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
 
-Or deal with the large polygons not contained by a single path/row, set `--aggregate True`, i.e., 
-`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/anae/intersect_16_17_18_739_740_741.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/anane/query/16_17_18_739_740_741.pkl --aggregate True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+Or deal with the large polygons not contained by a single path/row, set `--aggregate 15` typically, i.e., 
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/anae/intersect_16_17_18_739_740_741.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/anane/query/16_17_18_739_740_741.pkl --aggregate 15 --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
 
 - Plot the data
 
