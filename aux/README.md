@@ -31,7 +31,7 @@ usage:
 Example
 ------
 
-`qsub -N anae_1005 -l ncpus=48,mem=192GB -v threads=192,feature=anae//new/contain_1005.txt,datasets=anae//query/1005.pkl,aggregate=False,pdyaml=/g/data/u46/users/ea6141/wlinsight/fc_pd.yaml,shapefile=/g/data/r78/DEA_Wetlands/shapefiles/MDB_ANAE_Aug2017_modified_2019_SB_3577.shp job_normal.sh`
+`qsub -N anae_1005 -l ncpus=48,mem=192GB -v threads=192,feature=anae//new/contain_1005.txt,datasets=anae//query/1005.pkl,aggregate=0,pdyaml=/g/data/u46/users/ea6141/wlinsight/fc_pd.yaml,shapefile=/g/data/r78/DEA_Wetlands/shapefiles/MDB_ANAE_Aug2017_modified_2019_SB_3577.shp job_normal.sh`
 
 `job_sub_in.sh`
 =============
@@ -39,13 +39,15 @@ Example
 usage: 
 -----
 
-`./job_sub_in.sh $input $shapefile`
+`./job_sub_in.sh $input $shapefile $aggregate`
 
 `$input` is the folder where the feature list and query results are stored
+`$shapefile` is the shape file with all the polygons for the job
+`$aggregate` is the number of days in aggregation if it happens
 
 Example:
 
-`./job_sub_in.sh sadew/ shapefiles/waterfowlandwetlands_3577.shp`
+`./job_sub_in.sh sadew/ shapefiles/waterfowlandwetlands_3577.shp 15`
 
 Note: Add your work folder as prefix if needed.
 
@@ -80,6 +82,4 @@ In the file:
 
 Example:
 `export PYTHONUSERBASE=/g/data/r78/rjd547/python_setup/`
-
-`export PYTHONPATH=/g/data1a/r78/rjd547/jupyter_notebooks/datacube-stats:$PYTHONPATH`
 
