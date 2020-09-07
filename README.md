@@ -17,7 +17,7 @@ Version info
 ----
 - Deal with large polygons crossing multiple path/rows
 - Compute overlapping polygons correctly
-- Popularize the names and titles of output csv and png file with the selected propoties from shape file
+- Popularize the names and titles of output csv and png file with the selected properties from shape file
 - Mark not enough observations (less than 4 per year) in the plots
 - Add functionality of dumping csvs in database
 - Add functionality of zipping output pngs and csvs
