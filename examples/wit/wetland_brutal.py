@@ -33,6 +33,7 @@ from mpi4py.futures import MPIPoolExecutor
 from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
 from wit_tooling import poly_wkt, convert_shape_to_polygon, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster
+from dea_tools import waterbodies
 
 try:
     # this need to be fixed
@@ -368,7 +369,7 @@ def query_process(args):
     return grouped
 
 def convert_hash_to_shape(gh, id_inc):
-    wb_poly = dea_waterbodies.get_waterbody(geohash=gh).geometry.iloc[0]
+    wb_poly = waterbodies.get_waterbody(geohash=gh).geometry.iloc[0]
     shape = dict({'geometry': mapping(wb_poly), 'id':str(id_inc),
         'properties':{'hash': gh}})
     return shape
