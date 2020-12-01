@@ -34,6 +34,13 @@ from wit_tooling.polygon_drill import cal_area
 from wit_tooling.database.io import DIO
 from wit_tooling import poly_wkt, convert_shape_to_polygon, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster
 
+try:
+    # this need to be fixed
+    sys.path.append(os.environ['HOME'] + "/datafile/dea-notebooks/Scripts/")
+    import dea_waterbodies
+except:
+    print("tmp solution fix the water body lib properly please")
+
 _LOG = logging.getLogger('wit_tool')
 stdout_hdlr = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter('[%(asctime)s.%(msecs)03d - %(levelname)s] %(message)s')
@@ -41,6 +48,7 @@ stdout_hdlr.setFormatter(formatter)
 _LOG.addHandler(stdout_hdlr)
 _LOG.setLevel(logging.DEBUG)
 landsat_shp = '/g/data/u46/users/ea6141/aus_map/landsat_au.shp'
+waterbody_str = 'water_body_polygons'
 
 def db_insert_polygon(dio, poly_name, geometry, shapefile, feature_id):
     geometry = poly_wkt(geometry)
@@ -85,9 +93,6 @@ def query_store_polygons(args):
     poly_name = get_polyName(shape)
 
     poly_id, state = db_insert_polygon(dio, poly_name, shape['geometry'], shapefile, shape_id)
-    #print("shape id", shape_id)
-    #print("site name", shape['properties']['Site_Name'])
-    #print("poly id", poly_id)
     if not state:
         return (shape['geometry'], poly_id)
     else:
@@ -174,6 +179,8 @@ def aggregate_over_timeslice(fc_product, grouped, i_start, aggregate, ready, pol
 
 def get_polyName(feature):
     'function for QLD shapefile types'
+    if feature.get('properties') is None:
+        return "__"
     id_list = ['OBJECTID', 'Identifier']
     name_list = ['CATCHMENT', 'WetlandNam', 'Name']
     extra_name_list = ['HAB', 'Subwetland', 'SystemType']
@@ -314,16 +321,28 @@ def split_polygons(results, shapefile):
             poly_vessel[j].append(re[1])
     return  shape_vessel, poly_vessel
 
-def get_polygon_list(feature_list, shapefile):
-    with fiona.open(shapefile) as allshapes:
-        crs = allshapes.crs_wkt
-    for shape in iter_shapes(feature_list, shapefile):
+def get_polygon_list(feature_list, shapefile, geo_hash=None):
+    if shapefile == waterbody_str:
+        crs = "epsg:3577"
+    else:
+        with fiona.open(shapefile) as allshapes:
+            crs = allshapes.crs_wkt
+    for shape in iter_shapes(feature_list, shapefile, geo_hash):
         yield((shape, crs, shapefile))
 
-def shape_list(shapefile):
-    with fiona.open(shapefile) as allshapes:
-        for shape in allshapes:
-            yield(shape)
+def shape_list(shapefile, geo_hash=None):
+    if shapefile == waterbody_str:
+        id_inc = 1
+        with open(geo_hash, 'r') as f:
+            hash_list = f.read().splitlines()
+        for gh in hash_list:
+            shape = convert_hash_to_shape(gh, id_inc)
+            id_inc += 1
+            yield shape
+    else:
+        with fiona.open(shapefile) as allshapes:
+            for shape in allshapes:
+                yield(shape)
 
 def intersect_with_landsat(shape):
     contain = []
@@ -348,14 +367,29 @@ def query_process(args):
     _LOG.debug("query %s done", query['time'])
     return grouped
 
-def iter_shapes(t_file, shapefile):
-    shapes = shape_list(shapefile)
-    shape = next(shapes)
+def convert_hash_to_shape(gh, id_inc):
+    wb_poly = dea_waterbodies.get_waterbody(geohash=gh).geometry.iloc[0]
+    shape = dict({'geometry': mapping(wb_poly), 'id':str(id_inc),
+        'properties':{'hash': gh}})
+    return shape
+
+def iter_shapes(t_file, shapefile, geo_hash=None):
+    if shapefile == waterbody_str:
+        with open(geo_hash, 'r') as f:
+            hash_list = f.read().splitlines()
+    else:
+        shapes = shape_list(shapefile)
+        shape = next(shapes)
+
     with open(t_file, 'r') as f:
         for line in f:
             shape_id = line.rstrip()
-            while int(shape_id) != int(shape['id']):
-                shape = next(shapes)
+            if shapefile == waterbody_str:
+                gh = hash_list[int(shape_id) - 1]
+                shape = convert_hash_to_shape(gh, int(shape_id))
+            else:
+                while int(shape_id) != int(shape['id']):
+                    shape = next(shapes)
             yield shape
 
 def union_shapes(shape_list):
@@ -403,7 +437,7 @@ def generate_file_name(shape, output_name):
         file_name = '_'.join(file_name)
     return file_name
 
-shapefile_path = click.argument('shapefile', type=str, default='/g/data/r78/rjd547/DES-QLD_Project/data/Wet_WGS84_P.shp')
+shapefile_path = click.argument('shapefile', type=str, default="")
 product_definition = click.option('--product-yaml', type=str, help='yaml file of virtual product recipe',
         default='/g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml')
 
@@ -484,17 +518,20 @@ def wit_dump(shapefile, input_folder, input_name, feature):
 
 @main.command(name='wit-plot', help='Plot png and dump csv from database')
 @shapefile_path
+@click.option('--geo-hash', '-g', type=str, help='File of a list of Geohash of water body polygons', default=None)
 @click.option('--output-location', type=str, help='Location to save the query results', default='./results')
 @click.option('--output-name','-n', type=str, help='A property from shape file used to populate file name, default feature_id',
         multiple=True, default=None)
 @click.option('--feature',  type=int, help='An individual polygon to plot', default=None)
 @click.option('--zip-file', '-z',  type=str, help='Zip the output files into the given file name', default=None)
 
-def wit_plot(shapefile, output_location, output_name, feature, zip_file):
+def wit_plot(shapefile, geo_hash, output_location, output_name, feature, zip_file):
     if not path.exists(output_location):
         os.makedirs(output_location)
 
-    for shape in shape_list(shapefile):
+    if geo_hash is not None and shapefile == "":
+        shapefile = waterbody_str
+    for shape in shape_list(shapefile, geo_hash):
         if feature is not None:
             if int(shape['id']) != feature:
                 continue
@@ -529,13 +566,14 @@ def wit_plot(shapefile, output_location, output_name, feature, zip_file):
 
 @main.command(name='wit-query', help='Query datasets by path/row')
 @shapefile_path
+@click.option('--geo-hash', '-g', type=str, help='File of a list of Geohash of water body polygons', default=None)
 @click.option('--input-folder', type=str, default='./')
 @click.option('--start-date',  type=str, help='Start date, default=1987-01-01', default='1987-01-01')
 @click.option('--end-date',  type=str, help='End date, default=2020-01-01', default='2021-01-01')
 @click.option('--output-location',  type=str, help='Location to save the query results', default='./query_results')
 @product_definition
 
-def wit_query(shapefile, input_folder, start_date, end_date, output_location, product_yaml):
+def wit_query(shapefile, geo_hash, input_folder, start_date, end_date, output_location, product_yaml):
     tile_files = []
 
     if not path.exists(output_location):
@@ -548,8 +586,12 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, pr
     for (_, _, filenames) in walk(input_folder):
         tile_files.extend(filenames)
 
-    with fiona.open(shapefile) as allshapes:
-        crs = allshapes.crs_wkt
+    if geo_hash is not None and shapefile == "":
+        shapefile = waterbody_str
+        crs = "epsg:3577"
+    else:
+        with fiona.open(shapefile) as allshapes:
+            crs = allshapes.crs_wkt
 
     for t_file in tile_files:
         tile_id = re.findall(r"\d+", t_file)
@@ -558,7 +600,7 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, pr
             continue
         future_list = []
         query_poly = []
-        poly_list = iter_shapes('/'.join([input_folder, t_file]), shapefile)
+        poly_list = iter_shapes('/'.join([input_folder, t_file]), shapefile, geo_hash)
         with MPIPoolExecutor() as executor:
             while True:
                 if len(query_poly) == 1:
@@ -606,15 +648,21 @@ def wit_query(shapefile, input_folder, start_date, end_date, output_location, pr
 
 @main.command(name='wit-pathrow', help='Sort polygons into path/row')
 @shapefile_path
+@click.option('--geo-hash', '-g', type=str, help='File of a list of Geohash of water body polygons', default=None)
 @click.option('--output-location', type=str, help='Location for output data files', default='./')
-def match_pathrow(shapefile,  output_location):
+def match_pathrow(shapefile,  geo_hash, output_location):
     if not path.exists(output_location):
         os.makedirs(output_location)
+    if geo_hash is not None and shapefile == "":
+        shapefile = waterbody_str
+        with open(geo_hash, 'r') as f:
+            hash_list = f.read().splitlines()
 
     future_list = []
     total_poly = 0
+
     with MPIPoolExecutor(max_worker=8) as executor:
-        for shape in shape_list(shapefile):
+        for shape in shape_list(shapefile, geo_hash):
             future = executor.submit(intersect_with_landsat, shape)
             future_list.append(future)
 
@@ -635,13 +683,14 @@ def match_pathrow(shapefile,  output_location):
 
 @main.command(name='wit-cal', help='Compute area percentage of polygons')
 @shapefile_path
+@click.option('--geo-hash', '-g', type=str, help='File of a list of Geohash of water body polygons', default=None)
 @click.option('--time-chunk',  type=int, help='Time slices to load in one go', default=8)
 @click.option('--feature-list',  type=str, help='A file of features ID', default=None)
 @click.option('--datasets',  type=str, help='Pickled datasets', default=None)
 @click.option('--aggregate', type=int, help='If the polygon requires aggregation over path/row', default=0)
 @click.option('--reset', type=bool, help='Reset the time to be 1987-01-01. Cautious: it will delete the results in database.', default=False)
 @product_definition
-def wit_cal(shapefile, time_chunk, feature_list, datasets, aggregate, reset, product_yaml):
+def wit_cal(shapefile, geo_hash, time_chunk, feature_list, datasets, aggregate, reset, product_yaml):
 
     if feature_list is None:
         _LOG.error("feature list can't be none")
@@ -661,7 +710,10 @@ def wit_cal(shapefile, time_chunk, feature_list, datasets, aggregate, reset, pro
         recipe = yaml.safe_load(f)
     fc_product = construct(**recipe)
 
-    poly_list =  get_polygon_list(feature_list, shapefile)
+    if geo_hash is not None and shapefile == "":
+        shapefile = waterbody_str
+
+    poly_list =  get_polygon_list(feature_list, shapefile, geo_hash)
 
     time_start_insert = datetime.now()
     with MPIPoolExecutor(max_workers=8) as executor:

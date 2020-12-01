@@ -184,7 +184,8 @@ def plot_to_png(count, polyName):
             else:
                 gap_start = ls7_gap_start
             gap_end = ls7_gap_end
-    plot_patch(gap_start, gap_end)
+    if gap_start is not None and gap_end is not None:
+        plot_patch(gap_start, gap_end)
 
     # this section wraps text for polygon names that are too long
     polyName=polyName.replace("'","\\'")
