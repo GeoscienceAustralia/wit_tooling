@@ -35,13 +35,6 @@ from wit_tooling.database.io import DIO
 from wit_tooling import poly_wkt, convert_shape_to_polygon, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster
 from dea_tools import waterbodies
 
-try:
-    # this need to be fixed
-    sys.path.append(os.environ['HOME'] + "/datafile/dea-notebooks/Scripts/")
-    import dea_waterbodies
-except:
-    print("tmp solution fix the water body lib properly please")
-
 _LOG = logging.getLogger('wit_tool')
 stdout_hdlr = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter('[%(asctime)s.%(msecs)03d - %(levelname)s] %(message)s')

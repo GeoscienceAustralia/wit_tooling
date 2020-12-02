@@ -31,9 +31,11 @@ Requirements:
 -----------
 OpenMPI >= 4.0.1.
 
-datacube_stats on the refactor branch: https://github.com/opendatacube/datacube-stats/tree/refactor
+datacube_stats https://github.com/opendatacube/datacube-stats/
 
-A database with postgis enabled.
+dea_tools to retrieve the waterbody polygons
+
+A database with postgis enabled
 
 Other auxilliary data/scripts/shapefiles...
 
@@ -57,7 +59,7 @@ How To:
 
 One'll need four steps. 
 
-- Collect all the polygons interact with/contained by the landsat path/row and ouput the results as `txt` in `$out`. 
+- Collect all the polygons intersect with/contained by the landsat path/row and ouput the results as `txt` in `$out`. 
   Two reasons: 1. Aggregate by time if the polygon(s) would cover more than one path/row; 2. See `Secondly` in Section `Why`
   
 `mpirun python -m mpi4py.futures wetland_brutal.py wit-pathrow --output-location $out $shapefile`
@@ -70,7 +72,15 @@ mpirun python -m mpi4py.futures wetland_brutal.py wit-pathrow --output-location 
 
 with `$out = /g/data1a/u46/users/ea6141/wlinsight/sadew/new`, 
 
-and `$shapefile=/g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+and `$shapefile=/g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`.
+
+Or specially for the polygons from DEA waterbodies
+
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-pathrow --geo-hash $hashlist --output-location $out`
+
+where `$hashlist` is a file of geohash list of the waterbody polygons.
+
+Note: in this case, `$shapefile` has to be left as `default = None`. 
 
 The results in your output folder would look like:
 ```
@@ -130,7 +140,12 @@ Here `$in` is `$out` from the last step
 
 Example:
 
-`mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder /g/data1a/u46/users/ea6141/wlinsight/sadew/new --output-location /g/data1a/u46/users/ea6141/wlinsight/sadew/query --union True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-query --input-folder /g/data1a/u46/users/ea6141/wlinsight/sadew/new --output-location /g/data1a/u46/users/ea6141/wlinsight/sadew/query --union True --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`.
+
+Or for the polygons from DEA waterbodies
+
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-query --geo-hash $hashlist --input-folder $in --output-location $out --union True --product-yaml $pd_yaml`
+
 
 The result would look like
 ```
@@ -162,6 +177,10 @@ Example
 Or deal with the large polygons not contained by a single path/row, set `--aggregate 15` typically, i.e., 
 `mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --feature-list /g/data1a/u46/users/ea6141/wlinsight/anae/intersect_16_17_18_739_740_741.txt --datasets /g/data1a/u46/users/ea6141/wlinsight/anane/query/16_17_18_739_740_741.pkl --aggregate 15 --product-yaml /g/data1a/u46/users/ea6141/wlinsight/fc_pd.yaml /g/data1a/u46/users/ea6141/wlinsight/shapefiles/waterfowlandwetlands_3577.shp`
 
+For the polygons in DEA waterbodies, do
+
+`mpirun python -m mpi4py.futures wetland_brutal.py wit-cal --geo-hash $hashlist --feature-list $feature --datasets $datasets --aggregate $aggregate --product-yaml $pd_yaml`
+
 - Plot the data
 
 `python wetland_brutal.py wit-plot --output-location $folder --feature $id -n $property_1 -n $property_2 $shapefile`
@@ -176,6 +195,12 @@ Example:
 
 `python wetland_brutal.py wit-plot --output-location sadew/results -n Site_Name shapefiles/waterfowlandwetlands_3577.shp`
 , where `Site_Name` is an entry under `properties` for each polygon in the shapefile.
+
+For the polygons in DEA waterbodies, do
+
+`python wetland_brutal.py wit-plot --geo-hash $hashlist --output-location $folder --feature $id -n hash`,
+
+where `-n hash` is to specify the output file named by the geohash of the waterbody polygon.
 
 The results look like:
 ```
