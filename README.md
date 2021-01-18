@@ -13,7 +13,7 @@ Version info
 -----
 - First working version of wit
   
-2.1:
+2.1: [![DOI](https://zenodo.org/badge/249334731.svg)](https://zenodo.org/badge/latestdoi/249334731) 
 ----
 - Deal with large polygons crossing multiple path/rows
 - Compute overlapping polygons correctly
