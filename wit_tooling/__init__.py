@@ -2,24 +2,25 @@ from .poly_tools import convert_shape_to_polygon, poly_wkt, query_wit_data, plot
 from .datacube_util import construct_product, query_datasets, load_wofs_fc
 from .database.io import DIO
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import xarray as xr
 
+ls_timezone = timezone.utc
 def ls8_on(dataset):
-    LS8_START_DATE = datetime(2013, 1, 1)
+    LS8_START_DATE = datetime(2013, 1, 1, tzinfo=ls_timezone)
     return dataset.center_time >= LS8_START_DATE
 
 def ls7_on(dataset):
-    LS7_STOP_DATE = datetime(2003, 5, 31)
-    LS7_STOP_AGAIN = datetime(2013, 5, 31)
-    LS7_START_AGAIN = datetime(2010, 1, 1)
+    LS7_STOP_DATE = datetime(2003, 5, 31, tzinfo=ls_timezone)
+    LS7_STOP_AGAIN = datetime(2013, 5, 31, tzinfo=ls_timezone)
+    LS7_START_AGAIN = datetime(2010, 1, 1, tzinfo=ls_timezone)
     return dataset.center_time <= LS7_STOP_DATE or (dataset.center_time >= LS7_START_AGAIN
                                                     and dataset.center_time <= LS7_STOP_AGAIN)
 
 def ls5_on_1ym(dataset):
-    LS5_START_AGAIN = datetime(2003, 1, 1)
-    LS5_STOP_DATE = datetime(1999, 12, 31)
-    LS5_STOP_AGAIN = datetime(2011, 12, 31)
+    LS5_START_AGAIN = datetime(2003, 1, 1, tzinfo=ls_timezone)
+    LS5_STOP_DATE = datetime(1999, 12, 31, tzinfo=ls_timezone)
+    LS5_STOP_AGAIN = datetime(2011, 12, 31, tzinfo=ls_timezone)
     return dataset.center_time <= LS5_STOP_DATE or (dataset.center_time >= LS5_START_AGAIN
                                                     and dataset.center_time <= LS5_STOP_AGAIN)
 
@@ -72,7 +73,8 @@ def spatial_wit(fc_wofs_data, mask):
     water_var = list(fc_wofs_data.data_vars)[-1]
     fc_data = fc_wofs_data[none_water_vars].where(fc_wofs_data[water_var] < 1)
     tcw_percent = fc_data['TCW'] >= -350
-    fc_percent = fc_data.drop('TCW').where(~tcw_percent, 0)
+    fc_percent = fc_data.drop('TCW')
+    fc_percent = fc_percent.where((~tcw_percent & (fc_percent != fc_percent[list(fc_percent.data_vars)[0]].attrs['nodata'])), 0)
     sw_result = xr.merge([fc_percent, (tcw_percent.astype("int") * 100),
                           (fc_wofs_data[water_var].astype("int") * 100)])
     sw_result = sw_result.where(sw_result > 0, -127)
