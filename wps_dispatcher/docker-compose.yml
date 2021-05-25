@@ -1,0 +1,14 @@
+version: '3'
+services:
+  postgis:
+    image: postgis/postgis:12-3.1
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+
+volumes:
+  db-data:
+    driver: local
