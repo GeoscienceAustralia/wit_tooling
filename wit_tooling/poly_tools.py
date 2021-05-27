@@ -62,11 +62,15 @@ def query_wit_data(shape):
     poly_name, rows = dio.get_data_by_geom(poly_hash)
     return poly_name, np.array(rows)
 
-def query_wit_metrics(shape, mtype='alltime'):
+def query_wit_metrics(shape, mtype='alltime', set_str=''):
     dio = DIO.get()
     poly_hash = poly_wkt(shape['geometry'])
     if mtype == 'alltime':
         rows = dio.get_alltime_metrics_by_geom(poly_hash)
+    elif mtype == 'year':
+        rows = dio.get_year_metrics_by_geom(poly_hash)
+    elif mtype == 'event':
+        rows = dio.get_event_metrics_by_geom(poly_hash, set_str)
     return rows
 
 def load_timeslice(fc_product, to_split, mask_by_wofs=True):
