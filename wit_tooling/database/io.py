@@ -817,6 +817,34 @@ class DIO(object):
         row = self.get_alltime_metrics(poly_id)
         return row
 
+    def get_year_metrics_by_geom(self, geometry):
+        poly_id, poly_name, state = self.get_id_by_geom(self.poly_tablename, geometry)
+        if poly_id == 0:
+            return []
+        row = self.get_year_metrics(poly_id, ['wet_min', 'wet_max', 'wet_mean',
+                                              'water_min', 'water_max', 'water_mean',
+                                              'pv_min', 'pv_max', 'pv_min'])
+        return row
+
+    def get_event_metrics_by_geom(self, geometry, set_str=''):
+        poly_id, poly_name, state = self.get_id_by_geom(self.poly_tablename, geometry)
+        if poly_id == 0:
+            return []
+        query = "SELECT ev.poly_id, ev.start_time, ev.end_time, ev.duration, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean, " \
+    "max(data.tci_w+data.wofs_water)*max(ST_area(polygons.geometry))/10000 as area from data, polygons, event_metrics_time as ev "\
+    "WHERE polygons.poly_id = %s AND polygons.poly_id = ev.poly_id AND data.poly_id = polygons.poly_id AND data.datetime >= ev.start_time AND data.datetime <= ev.end_time " \
+    "GROUP BY ev.event_id " \
+    "UNION ALL " \
+    "SELECT ev.poly_id, ev.start_time, ev.end_time, ev.duration, max(data.tci_w+data.wofs_water) as max, avg(data.tci_w+data.wofs_water) as mean, " \
+    "max(data.tci_w+data.wofs_water)*max(ST_area(polygons.geometry))/10000 as area from data, polygons, incomplete_event as ev " \
+    "WHERE polygons.poly_id = %s AND polygons.poly_id = ev.poly_id AND data.poly_id = polygons.poly_id AND data.datetime >= ev.start_time AND data.datetime <= ev.end_time " \
+    "GROUP BY ev.event_id"
+
+        sql_params = (poly_id, poly_id)
+        with ConnectionFactory.get() as conn:
+            row = self.get_matching_rows(conn, query, sql_params, None)
+        return row
+
     def get_alltime_metrics(self, poly_list):
         if not isinstance(poly_list, self._SEQUENCE_TYPES):
             poly_list = tuple([poly_list])
@@ -830,6 +858,9 @@ class DIO(object):
         return row
 
     def get_year_metrics(self, poly_list, mlist):
+        if not isinstance(poly_list, self._SEQUENCE_TYPES):
+            poly_list = tuple([poly_list])
+
         mlist = ['poly_id', 'year'] + mlist
         query, sql_params, max_rows = self.construct_query(self.year_metrics,
                 dict(poly_id=poly_list), mlist)
@@ -859,7 +890,15 @@ class DIO(object):
             row = self.get_matching_rows(conn, query, sql_params, None)
         return row
 
-    def get_event_metrics(self, poly_list):
+    def get_event_metrics(self, poly_list, set_str=''):
+        if not isinstance(poly_list, self._SEQUENCE_TYPES):
+            poly_list = tuple([poly_list])
+
+        if set_str != '':
+            self.event_metrics.tableName += '_' + set_str
+        else:
+            self.event_metrics.tableName = 'event_metrics'
+
         query, sql_params, max_rows = self.construct_query(self.event_metrics,
                 dict(poly_id=poly_list), ['poly_id', 'start_time', 'end_time', 'duration', 'max', 'mean', 'area'])
         query = query + " ORDER BY poly_id ASC, start_time ASC"
