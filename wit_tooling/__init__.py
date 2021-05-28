@@ -5,7 +5,12 @@ import pandas as pd
 from datetime import datetime, timezone
 import xarray as xr
 
-ls_timezone = timezone.utc
+C3 = False
+if C3:
+    ls_timezone = timezone.utc
+else:
+    ls_timezone = None
+
 def ls8_on(dataset):
     LS8_START_DATE = datetime(2013, 1, 1, tzinfo=ls_timezone)
     return dataset.center_time >= LS8_START_DATE
