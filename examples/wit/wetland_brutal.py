@@ -441,28 +441,79 @@ def main():
 
 @main.command(name='wit-output-metrics', help='Check the sainity of the shape file')
 @shapefile_path
-@click.option('--output', type=str, help='New shape file to save metrics', default='tmp.shp')
-def wit_output_metrics(shapefile, output):
-    metrics_properties = {'PV_TPC': 'float:5.3', 'Water_TPC': 'float:5.3', 'Wet_TPC': 'float:5.3',
-            'PV_FOT': 'str:32', 'Water_FOT': 'str:32', 'Wet_FOT': 'str:32'}
-    with fiona.open(shapefile, 'r') as s:
-        crs = s.crs
-        driver = s.driver
-        schema = s.schema
-    schema['properties'].update(metrics_properties)
-    with fiona.open(output, 'w', crs=crs, driver=driver, schema=schema) as d:
-        for shape in shape_list(shapefile):
-            metrics = query_wit_metrics(shape)
+@click.option('--output', type=str, help='New shape/csv file to save metrics', default='tmp.csv')
+@click.option('--mtype','-m', type=str, help='Metrics types: alltime, year, or event', multiple=True, default=None)
+@click.option('--key', type=str, help='Property to match for the shape in the list', default=None)
+@click.option('--flist', type=str, help='A list of shape properties or feature ID from the shapefile', default=None)
+def wit_output_metrics(shapefile, output, mtype, key, flist):
+    if flist is not None:
+        with open(flist, 'r') as f:
+            p_list = f.read().splitlines()
+            t_len = len(p_list)
+    metric_heads = {'alltime': ['poly_id', 'PV_TPC', 'Water_TPC', 'Wet_TPC',
+                    'PV_FOT', 'Water_FOT', 'Wet_FOT'],
+                    'year': ['poly_id', 'year', 'wet_min', 'wet_max', 'wet_mean',
+                        'water_min', 'water_max', 'water_mean',
+                        'pv_min', 'pv_max', 'pv_min'],
+                    'event':['poly_id', 'start_time', 'end_time', 'duration',
+                        'max_wet', 'mean_wet', 'max_wet_area']}
+
+    if len(mtype) == 0:
+        mtype = ['alltime', 'year', 'event']
+
+    for shape in shape_list(shapefile):
+        if key is None:
+            key = 'feature_id'
+            shape_id = shape['id']
+        else:
+            shape_id = shape['properties'][key]
+        if flist is not None:
+            if str(shape_id) not in p_list:
+                continue
+            t_len -= 1
+        for mt in mtype:
+            metrics = query_wit_metrics(shape, mt, set_str='anae')
             if metrics == []:
                 continue
-            metrics = list(metrics[0])
-            for i in range(4, 7):
-                metrics[i] = metrics[i].isoformat()
-            properties = shape['properties']
-            for key, val in zip(metrics_properties.keys(), metrics[1:]):
-                properties.update({key: val})
-            d.write({'geometry': shape['geometry'], 'properties': properties})
-            break
+            metrics = pd.DataFrame(data=metrics, columns=metric_heads[mt])
+            metrics.insert(0, key, shape_id)
+            csv_buf = io.StringIO()
+            metrics.to_csv(csv_buf, index=False, header=False)
+            csv_buf.seek(0)
+            tmp_csv_file = output.split('.')[0] + '_' + mt + '.' + output.split('.')[1]
+            with open(tmp_csv_file, 'a') as f:
+                f.write(csv_buf.read())
+        if t_len <= 0:
+            for mt in mtype:
+                tmp_csv_file = output.split('.')[0] + '_' + mt + '.' + output.split('.')[1]
+                with open(tmp_csv_file, 'a') as f:
+                    f.write(','.join([key] + metric_heads[mt]))
+
+
+            break;
+
+    # special output to a shape file
+    if output.split('.')[-1] == 'shp':
+        metrics_properties = {'PV_TPC': 'float:5.3', 'Water_TPC': 'float:5.3', 'Wet_TPC': 'float:5.3',
+                'PV_FOT': 'str:32', 'Water_FOT': 'str:32', 'Wet_FOT': 'str:32'}
+        with fiona.open(shapefile, 'r') as s:
+            crs = s.crs
+            driver = s.driver
+            schema = s.schema
+        schema['properties'].update(metrics_properties)
+        with fiona.open(output, 'w', crs=crs, driver=driver, schema=schema) as d:
+            for shape in shape_list(shapefile):
+                metrics = query_wit_metrics('alltime', shape)
+                if metrics == []:
+                    continue
+                metrics = list(metrics[0])
+                for i in range(4, 7):
+                    metrics[i] = metrics[i].isoformat()
+                properties = shape['properties']
+                for key, val in zip(metrics_properties.keys(), metrics[1:]):
+                    properties.update({key: val})
+                d.write({'geometry': shape['geometry'], 'properties': properties})
+                break
 
 @main.command(name='wit-check', help='Check the sainity of the shape file')
 @shapefile_path
@@ -518,8 +569,9 @@ def wit_dump(shapefile, input_folder, input_name, feature):
         multiple=True, default=None)
 @click.option('--feature',  type=int, help='An individual polygon to plot', default=None)
 @click.option('--zip-file', '-z',  type=str, help='Zip the output files into the given file name', default=None)
+@click.option('--with-title', type=bool, help='Plot in png with title legend, and etc.', default=True)
 
-def wit_plot(shapefile, geo_hash, output_location, output_name, feature, zip_file):
+def wit_plot(shapefile, geo_hash, output_location, output_name, feature, zip_file, with_title):
     if not path.exists(output_location):
         os.makedirs(output_location)
 
@@ -542,7 +594,7 @@ def wit_plot(shapefile, geo_hash, output_location, output_name, feature, zip_fil
         tmp_csv_file = '/'.join([output_location, file_name+'.csv'])
         tmp_png_file = '/'.join([output_location, file_name+'.png'])
 
-        b_image = plot_to_png(count, poly_name)
+        b_image = plot_to_png(count, poly_name, with_title)
         csv_buf = io.StringIO()
         pd.DataFrame(data=count, columns=['TIME', 'BS', 'NPV', 'PV', 'WET', 'WATER']).to_csv(csv_buf, index=False)
         csv_buf.seek(0)
@@ -563,7 +615,7 @@ def wit_plot(shapefile, geo_hash, output_location, output_name, feature, zip_fil
 @click.option('--geo-hash', '-g', type=str, help='File of a list of Geohash of water body polygons', default=None)
 @click.option('--input-folder', type=str, default='./')
 @click.option('--start-date',  type=str, help='Start date, default=1987-01-01', default='1987-01-01')
-@click.option('--end-date',  type=str, help='End date, default=2020-01-01', default='2021-01-01')
+@click.option('--end-date',  type=str, help='End date, default=2021-01-01', default='2021-01-01')
 @click.option('--output-location',  type=str, help='Location to save the query results', default='./query_results')
 @product_definition
 
@@ -660,17 +712,19 @@ def match_pathrow(shapefile,  geo_hash, output_location):
             future = executor.submit(intersect_with_landsat, shape)
             future_list.append(future)
 
-    for future in future_list:
-        pl_name, contain, intersect = future.result()
-        total_poly += 1
-        if contain != []:
-            key = contain[0]
-            with open(output_location + '/contain_' + key + '.txt', 'a') as f:
-                f.write(pl_name+'\n')
-        elif intersect != []:
-            key = '_'.join(intersect)
-            with open(output_location + '/intersect_' + key + '.txt', 'a') as f:
+        _LOG.info("submit all %s", shape['id'])
+        for future in future_list:
+            pl_name, contain, intersect = future.result()
+            total_poly += 1
+            _LOG.info("return query %s", total_poly)
+            if contain != []:
+                key = contain[0]
+                with open(output_location + '/contain_' + key + '.txt', 'a') as f:
                     f.write(pl_name+'\n')
+            elif intersect != []:
+                key = '_'.join(intersect)
+                with open(output_location + '/intersect_' + key + '.txt', 'a') as f:
+                        f.write(pl_name+'\n')
 
     _LOG.info("total poly %s", total_poly)
     return

@@ -1,4 +1,4 @@
-from shapely.geometry import Polygon, MultiPolygon, shape
+from shapely.geometry import Polygon, MultiPolygon
 from rasterio import features
 from rasterio.warp import calculate_default_transform
 import hashlib
@@ -23,8 +23,35 @@ def shape_list(shapefile):
             yield(shape)
 
 def convert_shape_to_polygon(geometry):
-    return shape(geometry)
-
+    if geometry['type'] == 'MultiPolygon':
+        pl_wetland = []
+        for coords in geometry['coordinates']:
+            ext = coords[0]
+            if len(coords) > 1:
+                poly = Polygon(ext, coords[1:])
+            else:
+                poly = Polygon(ext)
+            if poly.is_valid == False:
+                poly = poly.buffer(0)
+                if poly.geom_type == 'MultiPolygon':
+                    for ep in poly:
+                        pl_wetland.append(ep)
+                else:
+                    pl_wetland.append(poly)
+            else:
+                pl_wetland.append(poly)
+        pl_wetland = MultiPolygon(pl_wetland)
+    else:
+        coords = geometry['coordinates']
+        ext = coords[0]
+        if len(coords) > 1:
+            pl_wetland = Polygon(ext, coords[1:])
+        else:
+            pl_wetland = Polygon(ext)
+        if pl_wetland.is_valid == False:
+            pl_wetland = pl_wetland.buffer(0)
+    return pl_wetland
+    
 def poly_wkt(geometry, srid=3577):
     pl_wetland = convert_shape_to_polygon(geometry)
     return 'SRID=%s;' % (srid)+pl_wetland.to_wkt()
@@ -82,7 +109,7 @@ def generate_raster(shapes, geobox):
         (yt, xt), fill=-1, transform=transform, all_touched=True)
     return target_ds
 
-def plot_to_png(count, polyName):
+def plot_to_png(count, polyName, with_title=True):
     min_observe = 4
     pal = ['#030aa7',
             '#04d9ff',
@@ -115,16 +142,18 @@ def plot_to_png(count, polyName):
     for p, l in zip(pal, labels):
         legend_handles.append(mpatches.Patch(color=p, alpha=0.6, label=l))
 
-    plt.legend(handles=legend_handles, loc='lower left', framealpha=0.6)
+    if with_title:
+        plt.legend(handles=legend_handles, loc='lower left', framealpha=0.6)
     plt.tight_layout()
     years = mdates.YearLocator(1)
     yearsFmt = mdates.DateFormatter('%Y')
     ax = plt.gca()
     ax.xaxis.set_major_locator(years)
     ax.xaxis.set_major_formatter(yearsFmt)
-    ax.set_xlabel(f'The Fractional Cover algorithm developed by the Joint Remote'
-    f' Sensing Research Program and \n the Water Observations from Space algorithm '
-    f'developed by Geoscience Australia are used in the production of this data',style='italic')
+    if with_title:
+        ax.set_xlabel(f'The Fractional Cover algorithm developed by the Joint Remote'
+        f' Sensing Research Program and \n the Water Observations from Space algorithm '
+        f'developed by Geoscience Australia are used in the production of this data',style='italic')
 
     gap_start = None
     gap_end = None
@@ -165,10 +194,11 @@ def plot_to_png(count, polyName):
         plot_patch(gap_start, gap_end)
 
     # this section wraps text for polygon names that are too long
-    polyName=polyName.replace("'","\\'")
-    title=ax.set_title("\n".join(wrap(f'Percentage of area dominated by WOfS, Wetness, Fractional Cover for {polyName}')))
+    if with_title:
+        polyName=polyName.replace("'","\\'")
+        title=ax.set_title("\n".join(wrap(f'Percentage of area dominated by WOfS, Wetness, Fractional Cover for {polyName}')))
+        title.set_y(1.05)
     fig.tight_layout()
-    title.set_y(1.05)
 
     bytes_image = io.BytesIO()
     plt.savefig(bytes_image, format='png')
