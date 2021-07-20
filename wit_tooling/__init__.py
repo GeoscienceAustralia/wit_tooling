@@ -1,6 +1,7 @@
 from .poly_tools import convert_shape_to_polygon, poly_wkt, query_wit_data, plot_to_png, query_wit_metrics, load_timeslice, generate_raster, shape_list
 from .datacube_util import construct_product, query_datasets, load_wofs_fc
 from .database.io import DIO
+from .aws_util import *
 import pandas as pd
 from datetime import datetime, timezone
 import xarray as xr
