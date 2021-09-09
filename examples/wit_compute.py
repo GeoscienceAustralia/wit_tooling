@@ -9,7 +9,7 @@ import boto3
 from dask_gateway import Gateway
 import os
 
-def compute_wit(shape, time, wit_path):
+def compute_wit(shape, time, wit_path, min_worker=2, max_worker=10):
     dc = Datacube()
     config = yaml.load(""" 
        about:
@@ -65,20 +65,20 @@ def compute_wit(shape, time, wit_path):
     options['profile'] = 'r5_L'
     options['jupyterhub_user'] = os.getenv('JUPYTERHUB_USER')
     cluster = gateway.new_cluster(options)
-    cluster.adapt(minimum=2, maximum=10)
+    cluster.adapt(minimum=min_worker, maximum=max_worker)
     client = cluster.get_client()
     print("get client dashboard", client.dashboard_link)
     print("start computation", datetime.now())
     try:
         re_wit = wit.process_data(results, dict(feature=query_poly, aggregate=shape[1]))
     except:
-        client.close()
-        cluster.shutdown()
         print("something wrong I need recycle the workers")
     else:
-        print("end computation", datetime.now())
-        re_wit['geometry'] = query_poly.geom.convex_hull.to_wkt()
+        print("end computation", datetime.now(), re_wit)
         session = boto3.Session(profile_name='dev')
         wr.s3.to_parquet(df=re_wit.reset_index(), 
                  path=wit_path+shape[0]['id'], compression="snappy", dataset=True, mode='overwrite',boto3_session=session)
+        
+    client.close()
+    cluster.shutdown()
     return
