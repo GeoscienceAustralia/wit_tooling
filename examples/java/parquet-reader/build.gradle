@@ -1,0 +1,78 @@
+plugins {
+	id "java"
+	id "application"
+}
+
+group = "au.net.jericho"
+version = "1.0"
+
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation("org.apache.parquet:parquet-hadoop:1.12.1") {
+		// required for org.apache.parquet.hadoop.ParquetFileReader
+		exclude group: "com.github.luben"
+		exclude group: "commons-pool"
+		exclude group: "org.xerial.snappy"
+		// dependency org.apache.parquet:parquet-column required for org.apache.parquet.column.page.PageReadStore
+			// dependency org.apache.parquet:parquet-common required for org.apache.parquet.io.InputFile
+				// dependency org.slf4j:slf4j-api required for org.slf4j.LoggerFactory
+				exclude group: "org.apache.yetus"
+		// dependency org.apache.parquet:parquet-encoding required for org.apache.parquet.column.values.bitpacking.Packer
+		// dependency org.apache.parquet:parquet-format-structures required for org.apache.parquet.format.TypeDefinedOrder
+		// dependency org.apache.parquet:parquet-jackson required for shaded.parquet.com.fasterxml.jackson.databind.ObjectMapper
+	}
+	implementation("org.apache.hadoop:hadoop-common:3.3.1") {
+		exclude group: "com.fasterxml.jackson.core"
+		// dependency com.fasterxml.woodstox:woodstox-code required for com.ctc.wstx.io.InputBootstrapper
+		exclude group: "com.google.code.findbugs"
+		exclude group: "com.google.code.gson"
+		exclude group: "com.google.guava"
+		exclude group: "com.google.protobuf"
+		exclude group: "com.google.re2j"
+		exclude group: "com.jcraft"
+		exclude group: "com.sun.jersey"
+		exclude group: "commons-beanutils"
+		exclude group: "commons-cli"
+		exclude group: "commons-codec"
+		// dependency commons-collections:commons-collections required for org.apache.commons.collections.map.UnmodifiableMap
+		exclude group: "commons-io"
+		exclude group: "commons-logging"
+		exclude group: "commons-net"
+		exclude group: "dnsjava"
+		exclude group: "javax.servlet"
+		// dependency log4j:log4j required for org.apache.log4j.Level
+		exclude group: "org.apache.avro"
+		exclude group: "org.apache.commons"
+		exclude group: "org.apache.curator"
+		// dependency org.apache.hadoop.thirdparty:hadoop-shaded-guava required for org.apache.hadoop.thirdparty.com.google.common.base.Preconditions
+		exclude group: "org.apache.hadoop.thirdparty", module: "hadoop-shaded-protobuf_3_7"
+		exclude group: "org.apache.hadoop"
+		exclude group: "org.apache.htrace"
+		exclude group: "org.apache.httpcomponents"
+		exclude group: "org.apache.kerby"
+		exclude group: "org.apache.zookeeper"
+		// dependency org.codehaus.woodstox:stax2-api required for org.codehaus.stax2.XMLInputFactory2
+		exclude group: "org.eclipse.jetty"
+		exclude group: "org.slf4j"
+		// dependency org.xerial.snappy:snappy-java required for org.xerial.snappy.Snappy
+	}
+	runtimeOnly("org.slf4j:slf4j-nop:1.7.22") // required to avoid warning SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder"
+}
+
+application {
+	mainClass = "Main"
+}
+
+//To run the class name from command line using gradle run
+mainClassName = "Main"
+
+// Use the command "gradlew listdependencies" to run this
+task listdependencies doLast() {
+	configurations.compileClasspath.each { println it }
+}
